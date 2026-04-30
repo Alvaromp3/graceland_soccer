@@ -91,3 +91,8 @@ htmlcov/
 # MLflow
 mlruns/
 
+# Pretrained models shipped with this app (override generic *.pkl / *.joblib ignores)
+!backend/modelos_graceland/
+!backend/modelos_graceland/*.pkl
+!backend/modelos_graceland/*.joblib
+
