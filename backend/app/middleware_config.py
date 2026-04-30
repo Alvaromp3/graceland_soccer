@@ -26,6 +26,14 @@ def is_training_disabled() -> bool:
     v = (os.environ.get("DISABLE_MODEL_TRAINING") or "").strip().lower()
     return v in ("1", "true", "yes", "on")
 
+def is_destructive_data_disabled() -> bool:
+    """
+    Guard rails for production when you don't want auth.
+    When enabled, endpoints that mutate/erase datasets are disabled.
+    """
+    v = (os.environ.get("DISABLE_DESTRUCTIVE_DATA_ENDPOINTS") or "").strip().lower()
+    return v in ("1", "true", "yes", "on")
+
 
 def is_production_docs_disabled() -> bool:
     v = (os.environ.get("ENVIRONMENT") or os.environ.get("ENV") or "").strip().lower()

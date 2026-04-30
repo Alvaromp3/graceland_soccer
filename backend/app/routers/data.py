@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from typing import Optional
 from ..models.schemas import ApiResponse
 from ..services.data_service import data_service
+from ..middleware_config import is_destructive_data_disabled
 import os
 import pandas as pd
 import logging
@@ -124,6 +125,11 @@ async def get_data_audit():
 async def clean_outliers(request: CleanDataRequest):
     """Remove outliers from data using IQR method"""
     try:
+        if is_destructive_data_disabled():
+            raise HTTPException(
+                status_code=403,
+                detail="Data cleaning is disabled on this deployment (DISABLE_DESTRUCTIVE_DATA_ENDPOINTS).",
+            )
         if data_service.df is None:
             raise HTTPException(status_code=400, detail="No data loaded")
         
@@ -139,6 +145,11 @@ async def clean_outliers(request: CleanDataRequest):
 async def reset_data():
     """Reset data to original (undo cleaning)"""
     try:
+        if is_destructive_data_disabled():
+            raise HTTPException(
+                status_code=403,
+                detail="Data reset is disabled on this deployment (DISABLE_DESTRUCTIVE_DATA_ENDPOINTS).",
+            )
         if data_service.df is None:
             raise HTTPException(status_code=400, detail="No data loaded")
         

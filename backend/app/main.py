@@ -33,6 +33,9 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+import logging
+import time
+
 from .middleware_config import (
     get_allowed_origins,
     get_api_key,
@@ -52,6 +55,8 @@ app = FastAPI(
     openapi_url="/openapi.json" if _show_docs else None,
 )
 
+logger = logging.getLogger("app")
+
 class APIKeyMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         if request.method == "OPTIONS":
@@ -70,6 +75,27 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         return JSONResponse({"detail": "Invalid or missing API key"}, status_code=401)
 
 
+class RequestTimingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        start = time.perf_counter()
+        try:
+            response = await call_next(request)
+            return response
+        finally:
+            try:
+                ms = (time.perf_counter() - start) * 1000.0
+                path = request.url.path
+                if path.startswith("/api"):
+                    logger.info(
+                        "request path=%s method=%s ms=%.1f",
+                        path,
+                        request.method,
+                        ms,
+                    )
+            except Exception:
+                pass
+
+
 # API key runs inside CORS so error responses still pass through CORSMiddleware.
 app.add_middleware(APIKeyMiddleware)
 app.add_middleware(
@@ -79,6 +105,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RequestTimingMiddleware)
 
 app.include_router(dashboard.router, prefix="/api")
 app.include_router(players.router, prefix="/api")

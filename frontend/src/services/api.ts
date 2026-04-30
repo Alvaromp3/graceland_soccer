@@ -15,12 +15,23 @@ import type {
   TeamComparisonData,
 } from '../types';
 
-/** Production: set to backend origin only, e.g. https://graceland-api.onrender.com (no trailing slash). */
-const API_BASE =
-  typeof import.meta.env.VITE_API_BASE_URL === 'string' &&
-  import.meta.env.VITE_API_BASE_URL.trim() !== ''
-    ? `${import.meta.env.VITE_API_BASE_URL.replace(/\/$/, '')}/api`
-    : '/api';
+function sanitizeApiBaseUrl(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const v = raw.trim();
+  if (!v) return null;
+  // Only allow http(s) absolute URLs to avoid weird schemes in build-time env.
+  if (!/^https?:\/\//i.test(v)) return null;
+  try {
+    const u = new URL(v);
+    return u.origin;
+  } catch {
+    return null;
+  }
+}
+
+/** Production: set to backend origin only, e.g. https://graceland-backend.onrender.com (no trailing slash). */
+const API_BASE_URL = sanitizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
+const API_BASE = API_BASE_URL ? `${API_BASE_URL}/api` : '/api';
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -37,6 +48,25 @@ const viteApiKey =
 if (viteApiKey) {
   api.defaults.headers.common['X-API-Key'] = viteApiKey;
 }
+
+// Normalize API errors into a short useful message for the UI.
+api.interceptors.response.use(
+  (r) => r,
+  (err: unknown) => {
+    const ax = err as { response?: { data?: any; status?: number }; message?: string };
+    const detail = ax.response?.data?.detail;
+    const msg =
+      Array.isArray(detail)
+        ? String(detail[0] ?? 'Request failed')
+        : typeof detail === 'string'
+          ? detail
+          : ax.message || 'Request failed';
+    const status = ax.response?.status;
+    const cleaned = String(msg).replace(/\s+/g, ' ').trim().slice(0, 280);
+    const e = new Error(status ? `${cleaned} (HTTP ${status})` : cleaned);
+    throw e;
+  },
+);
 
 // Dashboard endpoints
 export const dashboardApi = {
