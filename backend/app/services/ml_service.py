@@ -7,6 +7,7 @@ import pickle
 import os
 import time
 import logging
+import threading
 from datetime import datetime
 
 from sklearn.preprocessing import StandardScaler
@@ -48,7 +49,7 @@ MODELS_DIR = os.path.join(BACKEND_DIR, 'modelos_graceland')
 
 
 class MLService:
-    def __init__(self):
+    def __init__(self, *, load_on_init: bool = False):
         self.load_pipeline: Optional[Any] = None
         self.risk_pipeline: Optional[Any] = None
         self.feature_columns: List[str] = []
@@ -58,7 +59,19 @@ class MLService:
         self.risk_metrics: Optional[Dict] = None
         self.load_diagnostics: Dict[str, Any] = {}
         self.risk_diagnostics: Dict[str, Any] = {}
-        self._load_saved_models()
+        self._models_loaded: bool = False
+        self._load_lock = threading.Lock()
+        if load_on_init:
+            self._ensure_models_loaded()
+
+    def _ensure_models_loaded(self) -> None:
+        if self._models_loaded:
+            return
+        with self._load_lock:
+            if self._models_loaded:
+                return
+            self._load_saved_models()
+            self._models_loaded = True
     
     def _load_saved_models(self):
         # Ensure models directory exists
@@ -358,6 +371,7 @@ class MLService:
         }
     
     def predict_load(self, features: Dict[str, Any], session_type: str = 'match') -> Dict[str, Any]:
+        self._ensure_models_loaded()
         if self.load_pipeline is None:
             avg_load = features.get('Player Load', features.get('avgLoad', 300))
             multiplier = 1.15 if session_type == 'match' else 0.9
@@ -397,6 +411,7 @@ class MLService:
         }
     
     def predict_risk(self, features: Dict[str, float]) -> Tuple[str, float, List[str], List[str]]:
+        self._ensure_models_loaded()
         if self.risk_pipeline is None:
             return self._rule_based_risk_prediction(features)
         
@@ -559,6 +574,7 @@ class MLService:
             return []
     
     def get_model_status(self) -> Dict[str, Any]:
+        self._ensure_models_loaded()
         load_status = {
             'trained': self.load_pipeline is not None,
             'algorithm': None,
@@ -602,4 +618,4 @@ class MLService:
         }
 
 
-ml_service = MLService()
+ml_service = MLService(load_on_init=False)
