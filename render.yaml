@@ -1,0 +1,46 @@
+# Render Blueprint — https://github.com/Alvaromp3/graceland_soccer
+# New → Blueprint → connect this repo → Render reads render.yaml from the root.
+#
+# Set in the Render dashboard after first deploy:
+#   Backend:  ALLOWED_ORIGINS, OPEN_ROUTER_API_KEY, API_KEY (optional)
+#   Frontend: VITE_API_BASE_URL (rebuild static site after changing)
+
+services:
+  - type: web
+    name: graceland-backend
+    runtime: python
+    region: oregon
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.0"
+      - key: DISABLE_MODEL_TRAINING
+        value: "1"
+      - key: ENVIRONMENT
+        value: production
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: OPEN_ROUTER_API_KEY
+        sync: false
+      - key: API_KEY
+        sync: false
+
+  - type: web
+    name: graceland-frontend
+    runtime: static
+    region: oregon
+    plan: free
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: NODE_VERSION
+        value: "20.18.0"
+      - key: VITE_API_BASE_URL
+        sync: false
+      - key: VITE_API_KEY
+        sync: false
