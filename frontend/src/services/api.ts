@@ -240,11 +240,11 @@ export const analysisApi = {
   },
 
   getAIRecommendations: async (playerId: string): Promise<AIRecommendationBundle> => {
-    // Slightly above backend OPENROUTER_TIMEOUT_MAX_S so the browser does not abort first.
+    // LLM generation can be slow on cold starts; keep a higher per-request timeout here.
     const { data } = await api.post<ApiResponse<AIRecommendationBundle>>(
       '/analysis/ai-recommendations',
       { playerId },
-      { timeout: 35000 }
+      { timeout: 120000 }
     );
     return data.data!;
   },
