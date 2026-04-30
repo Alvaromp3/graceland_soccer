@@ -37,9 +37,8 @@ services:
       - key: DATA_STORE_DIR
         sync: false
 
-  - type: web
+  - type: static
     name: graceland-frontend
-    runtime: static
     plan: free
     rootDir: frontend
     buildCommand: npm ci && npm run build
