@@ -6,7 +6,11 @@ echo "Starting Elite Sports Performance Analytics..."
 echo "Starting backend on port 8000..."
 cd backend
 if [ ! -d "venv" ]; then
-    python3 -m venv venv
+    if command -v python3.11 >/dev/null 2>&1; then
+      python3.11 -m venv venv
+    else
+      python3 -m venv venv
+    fi
 fi
 source venv/bin/activate
 pip install -r requirements.txt -q
@@ -23,7 +27,11 @@ BACKEND_PID=$!
 # Start frontend
 echo "Starting frontend on port 5173..."
 cd ../frontend
-npm install -q
+if [ -f package-lock.json ]; then
+  npm ci -q
+else
+  npm install -q
+fi
 npm run dev &
 FRONTEND_PID=$!
 

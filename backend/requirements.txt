@@ -4,7 +4,9 @@ python-multipart>=0.0.6
 pydantic>=2.5.0
 pandas>=2.0.0
 numpy>=1.24.0
-scikit-learn>=1.3.0
+# Keep sklearn aligned with exported models (avoid breaking deserialization).
+# Use a bounded range rather than an exact pin to allow patch updates.
+scikit-learn>=1.8.0,<1.9.0
 xgboost>=2.0.0
 lightgbm>=4.0.0
 catboost>=1.2.0

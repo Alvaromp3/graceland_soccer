@@ -37,7 +37,7 @@ import {
   CartesianGrid,
 } from 'recharts';
 import { playersApi, analysisApi, useDataStatus } from '../services/api';
-import { useTeam } from '../contexts/TeamContext';
+import { useTeam } from '../contexts/useTeam';
 import type { Player } from '../types';
 import Chart3D from '../components/charts/Chart3D';
 

@@ -23,6 +23,17 @@ import {
 } from 'recharts';
 import { dataApi, useDataStatus } from '../../services/api';
 
+type OutlierSummary = { count: number; percentage: number };
+
+function asOutlierSummary(value: unknown): OutlierSummary | null {
+  if (!value || typeof value !== 'object') return null;
+  const v = value as { count?: unknown; percentage?: unknown };
+  const count = typeof v.count === 'number' ? v.count : null;
+  const percentage = typeof v.percentage === 'number' ? v.percentage : null;
+  if (count === null || percentage === null) return null;
+  return { count, percentage };
+}
+
 export default function DataAuditContent() {
   const queryClient = useQueryClient();
   const { data: dataStatus } = useDataStatus();
@@ -55,11 +66,14 @@ export default function DataAuditContent() {
 
   const outlierChartData = audit?.outliers 
     ? Object.entries(audit.outliers)
-        .map(([col, data]: [string, any]) => ({
-          name: col.replace(/\(.*\)/g, '').trim().slice(0, 15),
-          outliers: data.count,
-          percentage: data.percentage,
-        }))
+        .map(([col, data]) => {
+          const summary = asOutlierSummary(data);
+          return {
+            name: col.replace(/\(.*\)/g, '').trim().slice(0, 15),
+            outliers: summary?.count ?? 0,
+            percentage: summary?.percentage ?? 0,
+          };
+        })
         .sort((a, b) => b.outliers - a.outliers)
         .slice(0, 8)
     : [];
@@ -95,7 +109,8 @@ export default function DataAuditContent() {
     );
   }
 
-  const qualityColor = audit?.dataQualityScore >= 80 ? 'blue' : audit?.dataQualityScore >= 60 ? 'yellow' : 'red';
+  const qualityScore = audit?.dataQualityScore ?? 0;
+  const qualityColor = qualityScore >= 80 ? 'blue' : qualityScore >= 60 ? 'yellow' : 'red';
 
   return (
     <div className="space-y-6">
@@ -272,11 +287,11 @@ export default function DataAuditContent() {
                   <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                     <div className="p-2 bg-slate-800/50 rounded-lg">
                       <span className="text-slate-500">Outliers Capped:</span>
-                      <span className="text-white ml-2 font-medium">{cleanMutation.data.stats.totalOutliersCapped}</span>
+                      <span className="text-white ml-2 font-medium">{String(cleanMutation.data.stats.totalOutliersCapped ?? '')}</span>
                     </div>
                     <div className="p-2 bg-slate-800/50 rounded-lg">
                       <span className="text-slate-500">Columns Affected:</span>
-                      <span className="text-white ml-2 font-medium">{cleanMutation.data.stats.columnsAffected}</span>
+                      <span className="text-white ml-2 font-medium">{String(cleanMutation.data.stats.columnsAffected ?? '')}</span>
                     </div>
                   </div>
                 )}

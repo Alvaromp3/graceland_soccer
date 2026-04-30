@@ -1,31 +1,9 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
-type TeamType = 'mens' | 'womens';
-
-interface TeamContextType {
-  currentTeam: TeamType;
-  switchTeam: (team: TeamType) => void;
-  teamStatus: {
-    mens: { loaded: boolean; rowCount: number };
-    womens: { loaded: boolean; rowCount: number };
-  } | null;
-  isLoading: boolean;
-}
-
-const TeamContext = createContext<TeamContextType | undefined>(undefined);
-
-/** Avoid hanging forever when the API is down (fetch has no default timeout). */
-async function fetchWithTimeout(url: string, ms: number, init?: RequestInit): Promise<Response> {
-  const ctrl = new AbortController();
-  const t = window.setTimeout(() => ctrl.abort(), ms);
-  try {
-    return await fetch(url, { ...init, signal: ctrl.signal });
-  } finally {
-    window.clearTimeout(t);
-  }
-}
+import { TeamContext, fetchWithTimeout } from './teamContext';
+import type { TeamType } from './teamContext';
 
 export function TeamProvider({ children }: { children: ReactNode }) {
   const [currentTeam, setCurrentTeam] = useState<TeamType>('mens');
@@ -50,7 +28,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         return {
           currentTeam: 'mens',
           mens: { loaded: false, rowCount: 0 },
-          womens: { loaded: false, rowCount: 0 }
+          womens: { loaded: false, rowCount: 0 },
         };
       }
     },
@@ -65,24 +43,19 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const switchTeamMutation = useMutation({
     mutationFn: async (team: TeamType) => {
-      try {
-        const response = await fetchWithTimeout('/api/settings/switch-team', 15000, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ team }),
-        });
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const data = await response.json();
-        if (!data.success) {
-          throw new Error(data.error || 'Failed to switch team');
-        }
-        return data.data;
-      } catch (error) {
-        console.error('Error switching team:', error);
-        throw error;
+      const response = await fetchWithTimeout('/api/settings/switch-team', 15000, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ team }),
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to switch team');
+      }
+      return data.data;
     },
     onSuccess: (_data, team) => {
       setCurrentTeam(team);
@@ -121,10 +94,3 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   );
 }
 
-export function useTeam() {
-  const context = useContext(TeamContext);
-  if (context === undefined) {
-    throw new Error('useTeam must be used within a TeamProvider');
-  }
-  return context;
-}

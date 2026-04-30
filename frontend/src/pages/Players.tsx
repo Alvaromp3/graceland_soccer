@@ -14,7 +14,7 @@ import {
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { Link } from 'react-router-dom';
 import { playersApi, useDataStatus } from '../services/api';
-import { useTeam } from '../contexts/TeamContext';
+import { useTeam } from '../contexts/useTeam';
 import PlayerPanel, { PlayersComparisonChart } from '../components/players/PlayerPanel';
 import ChartPanel from '../components/charts/ChartPanel';
 

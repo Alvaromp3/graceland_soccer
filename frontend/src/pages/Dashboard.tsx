@@ -23,7 +23,7 @@ import {
   useDataStatus,
 } from '../hooks/useDashboard';
 import { dataApi } from '../services/api';
-import { useTeam } from '../contexts/TeamContext';
+import { useTeam } from '../contexts/useTeam';
 import TeamSelector from '../components/layout/TeamSelector';
 
 export default function Dashboard() {

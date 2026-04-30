@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ChevronRight,
@@ -36,10 +36,6 @@ export default function PlayerPanel({
 }: PlayerPanelProps) {
   const [isEditingPosition, setIsEditingPosition] = useState(false);
   const [selectedPosition, setSelectedPosition] = useState(player.position);
-
-  useEffect(() => {
-    setSelectedPosition(player.position);
-  }, [player.position]);
 
   const handleSavePosition = () => {
     if (onEditPosition) {
@@ -87,7 +83,11 @@ export default function PlayerPanel({
                 </span>
                 <button
                   type="button"
-                  onClick={(e) => { e.stopPropagation(); setIsEditingPosition(true); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedPosition(player.position);
+                    setIsEditingPosition(true);
+                  }}
                   className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--accent-performance)]"
                   title="Edit position"
                 >

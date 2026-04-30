@@ -15,6 +15,62 @@ import type {
   TeamComparisonData,
 } from '../types';
 
+export type RankingRow = {
+  name: string;
+  rank: number;
+  metrics: Record<string, number>;
+};
+
+export type AIRecommendationBundle = {
+  playerId: string;
+  playerName: string;
+  aiRecommendations: string;
+  aiSource?: string;
+  aiSuccess: boolean;
+  aiError?: string;
+  // Risk payload returned by the backend
+  riskLevel: 'low' | 'medium' | 'high';
+  probability?: number;
+  factors?: string[];
+  recommendations?: string[];
+  hasRecentData?: boolean;
+  recentSessionCount?: number;
+};
+
+export type OpenRouterStatus = {
+  status: 'ready' | 'not_configured' | 'error' | string;
+  message?: string;
+  defaultModel?: string;
+};
+
+export type TeamAverageResponse = {
+  riskLevel?: 'low' | 'medium' | 'high';
+  avgLoad?: number;
+  avgSpeed?: number;
+  sessions?: number;
+  hasRecentData?: boolean;
+  recentSessionCount?: number;
+  teamStats?: {
+    totalPlayers: number;
+    riskDistribution: { low: number; medium: number; high: number };
+  };
+};
+
+export type DataAuditOutlier = { count: number; percentage: number };
+export type DataAuditColumnStats = { mean: number; std: number; min: number; max: number };
+
+export type DataAuditReport = {
+  dataQualityScore?: number;
+  totalRows?: number;
+  totalPlayers?: number;
+  outliers?: Record<string, DataAuditOutlier>;
+  beforeAfterCleaning?: Array<Record<string, unknown>>;
+  warnings?: string[];
+  recommendations?: string[];
+  isCleaned?: boolean;
+  columnStats?: Record<string, DataAuditColumnStats>;
+};
+
 function sanitizeApiBaseUrl(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
   const v = raw.trim();
@@ -53,8 +109,8 @@ if (viteApiKey) {
 api.interceptors.response.use(
   (r) => r,
   (err: unknown) => {
-    const ax = err as { response?: { data?: any; status?: number }; message?: string };
-    const detail = ax.response?.data?.detail;
+    const ax = err as { response?: { data?: unknown; status?: number }; message?: string };
+    const detail = (ax.response?.data as { detail?: unknown } | undefined)?.detail;
     const msg =
       Array.isArray(detail)
         ? String(detail[0] ?? 'Request failed')
@@ -108,8 +164,8 @@ export const playersApi = {
     return data.data!;
   },
 
-  getDetail: async (playerId: string): Promise<any> => {
-    const { data } = await api.get<ApiResponse<any>>(`/players/detail/${playerId}`);
+  getDetail: async (playerId: string): Promise<PlayerDetail> => {
+    const { data } = await api.get<ApiResponse<PlayerDetail>>(`/players/detail/${playerId}`);
     return data.data!;
   },
 
@@ -133,8 +189,8 @@ export const playersApi = {
     return data.data!;
   },
 
-  getRankings: async (metric: string): Promise<any[]> => {
-    const { data } = await api.get<ApiResponse<any[]>>(`/players/rankings/${metric}`);
+  getRankings: async (metric: string): Promise<RankingRow[]> => {
+    const { data } = await api.get<ApiResponse<RankingRow[]>>(`/players/rankings/${metric}`);
     return data.data!;
   },
 
@@ -151,7 +207,7 @@ export const playersApi = {
 // Analysis endpoints
 export const analysisApi = {
   predictLoad: async (params: { playerId: string; features: Record<string, number>; sessionType?: string }): Promise<LoadPrediction & { predictedLoad: number; confidence?: number; method?: string; sessionType?: string }> => {
-    const { data } = await api.post<ApiResponse<any>>('/analysis/predict-load', {
+    const { data } = await api.post<ApiResponse<LoadPrediction & { predictedLoad: number; confidence?: number; method?: string; sessionType?: string }>>('/analysis/predict-load', {
       playerId: params.playerId,
       features: params.features,
       sessionType: params.sessionType ?? 'match',
@@ -173,19 +229,19 @@ export const analysisApi = {
     return data.data!;
   },
 
-  getOllamaStatus: async (): Promise<any> => {
-    const { data } = await api.get<ApiResponse<any>>('/analysis/ollama-status');
+  getOllamaStatus: async (): Promise<unknown> => {
+    const { data } = await api.get<ApiResponse<unknown>>('/analysis/ollama-status');
     return data.data!;
   },
 
-  getOpenRouterStatus: async (): Promise<any> => {
-    const { data } = await api.get<ApiResponse<any>>('/analysis/openrouter-status');
+  getOpenRouterStatus: async (): Promise<OpenRouterStatus> => {
+    const { data } = await api.get<ApiResponse<OpenRouterStatus>>('/analysis/openrouter-status');
     return data.data!;
   },
 
-  getAIRecommendations: async (playerId: string): Promise<any> => {
+  getAIRecommendations: async (playerId: string): Promise<AIRecommendationBundle> => {
     // Slightly above backend OPENROUTER_TIMEOUT_MAX_S so the browser does not abort first.
-    const { data } = await api.post<ApiResponse<any>>(
+    const { data } = await api.post<ApiResponse<AIRecommendationBundle>>(
       '/analysis/ai-recommendations',
       { playerId },
       { timeout: 35000 }
@@ -193,8 +249,8 @@ export const analysisApi = {
     return data.data!;
   },
 
-  getTeamAverage: async (): Promise<any> => {
-    const { data } = await api.get<ApiResponse<any>>('/analysis/team-average');
+  getTeamAverage: async (): Promise<TeamAverageResponse> => {
+    const { data } = await api.get<ApiResponse<TeamAverageResponse>>('/analysis/team-average');
     return data.data!;
   },
 
@@ -226,13 +282,13 @@ export const trainingApi = {
     return data.data!;
   },
 
-  getModelStatus: async (): Promise<any> => {
-    const { data } = await api.get<ApiResponse<any>>('/training/status');
+  getModelStatus: async (): Promise<unknown> => {
+    const { data } = await api.get<ApiResponse<unknown>>('/training/status');
     return data.data!;
   },
 
-  predictLoad: async (params: { playerId: string; sessionType: string; features: Record<string, number> }): Promise<any> => {
-    const { data } = await api.post<ApiResponse<any>>('/training/predict-load', params);
+  predictLoad: async (params: { playerId: string; sessionType: string; features: Record<string, number> }): Promise<unknown> => {
+    const { data } = await api.post<ApiResponse<unknown>>('/training/predict-load', params);
     return data.data!;
   },
 };
@@ -273,18 +329,18 @@ export const dataApi = {
     return data.data!;
   },
 
-  getAudit: async (): Promise<any> => {
-    const { data } = await api.get<ApiResponse<any>>('/data/audit');
+  getAudit: async (): Promise<DataAuditReport> => {
+    const { data } = await api.get<ApiResponse<DataAuditReport>>('/data/audit');
     return data.data!;
   },
 
-  cleanOutliers: async (method: string = 'iqr', threshold: number = 1.5): Promise<any> => {
-    const { data } = await api.post<ApiResponse<any>>('/data/clean-outliers', { method, threshold });
+  cleanOutliers: async (method: string = 'iqr', threshold: number = 1.5): Promise<{ success: boolean; message?: string; stats?: Record<string, unknown> }> => {
+    const { data } = await api.post<ApiResponse<{ success: boolean; message?: string; stats?: Record<string, unknown> }>>('/data/clean-outliers', { method, threshold });
     return data.data!;
   },
 
-  resetData: async (): Promise<any> => {
-    const { data } = await api.post<ApiResponse<any>>('/data/reset');
+  resetData: async (): Promise<{ success: boolean; message?: string }> => {
+    const { data } = await api.post<ApiResponse<{ success: boolean; message?: string }>>('/data/reset');
     return data.data!;
   },
 };
@@ -296,18 +352,18 @@ export const settingsApi = {
     return data.data!;
   },
 
-  setDateReference: async (useTodayAsReference: boolean): Promise<any> => {
-    const { data } = await api.post<ApiResponse<any>>('/settings/date-reference', { useTodayAsReference });
+  setDateReference: async (useTodayAsReference: boolean): Promise<{ success: boolean; message?: string }> => {
+    const { data } = await api.post<ApiResponse<{ success: boolean; message?: string }>>('/settings/date-reference', { useTodayAsReference });
     return data.data!;
   },
 
-  getTeamStatus: async (): Promise<any> => {
-    const { data } = await api.get<ApiResponse<any>>('/settings/team-status');
+  getTeamStatus: async (): Promise<unknown> => {
+    const { data } = await api.get<ApiResponse<unknown>>('/settings/team-status');
     return data.data!;
   },
 
-  switchTeam: async (team: string): Promise<any> => {
-    const { data } = await api.post<ApiResponse<any>>('/settings/switch-team', { team });
+  switchTeam: async (team: string): Promise<{ success: boolean; message?: string }> => {
+    const { data } = await api.post<ApiResponse<{ success: boolean; message?: string }>>('/settings/switch-team', { team });
     return data.data!;
   },
 };

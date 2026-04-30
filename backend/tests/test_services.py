@@ -1,7 +1,16 @@
 import unittest
 
-from backend.app.services.data_service import DataService
-from backend.app.services.ml_service import MLService
+import warnings
+
+# Keep test output clean: model artifact warnings are expected in this repo.
+warnings.filterwarnings("ignore", message=r"Trying to unpickle estimator[\\s\\S]*")
+warnings.filterwarnings(
+    "ignore",
+    message=r"X does not have valid feature names, but .* was fitted with feature names",
+)
+
+from app.services.data_service import DataService
+from app.services.ml_service import MLService
 
 
 SAMPLE_CSV = b"""Player Name,Date,Session Title,Player Load,Duration,Distance (miles),Sprint Distance (yards),Top Speed (mph),Max Acceleration (yd/s/s),Max Deceleration (yd/s/s),Work Ratio,Energy (kcal),Hr Load,Impacts,Power Plays,Power Score (w/kg),Distance Per Min (yd/min)

@@ -37,18 +37,10 @@ import {
   Bar,
 } from 'recharts';
 import { playersApi, analysisApi, useDataStatus } from '../services/api';
-import { useTeam } from '../contexts/TeamContext';
+import type { AIRecommendationBundle } from '../services/api';
+import { useTeam } from '../contexts/useTeam';
 import type { RiskPrediction, Player } from '../types';
 import ReactMarkdown from 'react-markdown';
-
-interface AIRecommendationBundle {
-  playerId: string;
-  playerName: string;
-  aiRecommendations: string;
-  aiSource?: string;
-  aiSuccess: boolean;
-  aiError?: string;
-}
 
 export default function Analysis() {
   const [selectedPlayer, setSelectedPlayer] = useState<string>('');
@@ -118,6 +110,7 @@ export default function Analysis() {
         playerId: selectedPlayer,
         playerName: selectedPlayerData?.name || 'Unknown',
         aiSource: 'openrouter',
+        riskLevel: 'low',
       });
     },
   });
@@ -360,20 +353,20 @@ export default function Analysis() {
                     </div>
                   </div>
                   {/* Team Stats for Team Average - only when we have real data */}
-                  {selectedPlayerData.id === 'team_average' && teamAverage?.teamStats?.totalPlayers > 0 && (
+                  {selectedPlayerData.id === 'team_average' && (teamAverage?.teamStats?.totalPlayers ?? 0) > 0 && (
                     <div className="mt-4 pt-4 border-t border-[#e2e8f0]">
                       <p className="text-xs text-[#64748b] mb-2">Team Distribution</p>
                       <div className="grid grid-cols-3 gap-2">
                         <div className="text-center p-2 rounded border border-[var(--border-default)] bg-[var(--bg-elevated)]">
-                          <p className="text-lg font-bold text-[#10b981]">{teamAverage.teamStats.riskDistribution.low}</p>
+                          <p className="text-lg font-bold text-[#10b981]">{teamAverage?.teamStats?.riskDistribution.low ?? 0}</p>
                           <p className="caption">Low Risk</p>
                         </div>
                         <div className="text-center p-2 bg-[#f59e0b]/10 border border-[#f59e0b]/20 rounded-lg">
-                          <p className="text-lg font-bold text-[#f59e0b]">{teamAverage.teamStats.riskDistribution.medium}</p>
+                          <p className="text-lg font-bold text-[#f59e0b]">{teamAverage?.teamStats?.riskDistribution.medium ?? 0}</p>
                           <p className="text-[10px] text-[#64748b]">Medium</p>
                         </div>
                         <div className="text-center p-2 bg-[#dc2626]/10 border border-[#dc2626]/20 rounded-lg">
-                          <p className="text-lg font-bold text-[#dc2626]">{teamAverage.teamStats.riskDistribution.high}</p>
+                          <p className="text-lg font-bold text-[#dc2626]">{teamAverage?.teamStats?.riskDistribution.high ?? 0}</p>
                           <p className="text-[10px] text-[#64748b]">High Risk</p>
                         </div>
                       </div>

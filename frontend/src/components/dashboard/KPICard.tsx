@@ -17,7 +17,7 @@ export default function KPICard({
   title, 
   value, 
   change, 
-  icon: _Icon, 
+  icon: Icon, 
   subtitle,
   variant = 'default',
   delay = 0,
@@ -72,6 +72,18 @@ export default function KPICard({
         }}>
           {isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
           <span>{Math.abs(change)}%</span>
+        </div>
+
+        <div
+          className="w-9 h-9 rounded-lg flex items-center justify-center border"
+          style={{
+            backgroundColor: bg,
+            borderColor: border,
+            color: accent,
+          }}
+          aria-hidden
+        >
+          <Icon className="w-4 h-4" />
         </div>
       </div>
       

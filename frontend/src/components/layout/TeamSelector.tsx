@@ -1,5 +1,5 @@
 import { Users, UserCheck } from 'lucide-react';
-import { useTeam } from '../../contexts/TeamContext';
+import { useTeam } from '../../contexts/useTeam';
 
 export default function TeamSelector() {
   const { currentTeam, switchTeam, teamStatus } = useTeam();

@@ -16,8 +16,9 @@ import {
   Users,
   TrendingDown
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { playersApi, useDataStatus } from '../services/api';
-import { useTeam } from '../contexts/TeamContext';
+import { useTeam } from '../contexts/useTeam';
 import Chart3D from '../components/charts/Chart3D';
 import {
   BarChart,
@@ -35,7 +36,7 @@ interface RankingMetric {
   id: string;
   name: string;
   description: string;
-  icon: any;
+  icon: LucideIcon;
   color: string;
   unit: string;
   key: string;
@@ -221,24 +222,24 @@ export default function Rankings() {
   const chartData = useMemo(() => {
     if (!rankings || rankings.length === 0) return [];
     const top10 = rankings.slice(0, 10);
-    const maxValue = Math.max(...top10.map((p: any) => p.metrics[currentMetric.key] || 0));
-    const avgValue = top10.reduce((sum: number, p: any) => sum + (p.metrics[currentMetric.key] || 0), 0) / top10.length;
+    const maxValue = Math.max(...top10.map((p) => p.metrics[currentMetric.key] ?? 0));
+    const avgValue = top10.reduce((sum, p) => sum + (p.metrics[currentMetric.key] ?? 0), 0) / top10.length;
     
-    return top10.map((player: any) => ({
+    return top10.map((player) => ({
       name: player.name.split(' ').pop() || player.name,
       fullName: player.name,
-      value: player.metrics[currentMetric.key] || 0,
-      percentage: maxValue > 0 ? ((player.metrics[currentMetric.key] || 0) / maxValue) * 100 : 0,
+      value: player.metrics[currentMetric.key] ?? 0,
+      percentage: maxValue > 0 ? ((player.metrics[currentMetric.key] ?? 0) / maxValue) * 100 : 0,
       rank: player.rank,
-      sessions: player.metrics.sessions || 0,
-      isAboveAvg: (player.metrics[currentMetric.key] || 0) > avgValue
+      sessions: player.metrics.sessions ?? 0,
+      isAboveAvg: (player.metrics[currentMetric.key] ?? 0) > avgValue
     }));
   }, [rankings, currentMetric]);
 
   // Calculate stats
   const stats = useMemo(() => {
     if (!rankings || rankings.length === 0) return null;
-    const values = rankings.map((p: any) => p.metrics[currentMetric.key] || 0);
+    const values = rankings.map((p) => p.metrics[currentMetric.key] ?? 0);
     const maxValue = Math.max(...values);
     const minValue = Math.min(...values);
     const avgValue = values.reduce((sum, val) => sum + val, 0) / values.length;
@@ -455,10 +456,10 @@ export default function Rankings() {
           </div>
         ) : (
           <div className="divide-y divide-[#e2e8f0]">
-            {rankings.map((player: any) => {
+            {rankings.map((player) => {
               const value = player.metrics[currentMetric.key] || 0;
               const isTopThree = player.rank <= 3;
-              const maxValue = Math.max(...rankings.map((p: any) => p.metrics[currentMetric.key] || 0));
+              const maxValue = Math.max(...rankings.map((p) => p.metrics[currentMetric.key] || 0));
               const percentage = maxValue > 0 ? (value / maxValue) * 100 : 0;
               const isAboveAvg = stats && value > stats.avgValue;
 

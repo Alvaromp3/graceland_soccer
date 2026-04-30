@@ -1696,10 +1696,11 @@ class DataService:
         """Set date reference setting"""
         self.use_today_as_reference = use_today
         self._save_state()
+        label = "Today's date" if use_today else "Last training date from CSV"
         return {
             'success': True,
             'useTodayAsReference': self.use_today_as_reference,
-            'message': f'Date reference set to: {"Today\'s date" if use_today else "Last training date from CSV"}'
+            'message': f'Date reference set to: {label}'
         }
     
     def update_player_position(self, player_name: str, position: str, team: str = None) -> Dict[str, Any]:

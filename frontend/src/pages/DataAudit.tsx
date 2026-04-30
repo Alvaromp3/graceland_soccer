@@ -24,6 +24,29 @@ import {
 } from 'recharts';
 import { dataApi, useDataStatus } from '../services/api';
 
+type OutlierSummary = { count: number; percentage: number };
+type ColumnStatsSummary = { mean: number; std: number; min: number; max: number };
+
+function asOutlierSummary(value: unknown): OutlierSummary | null {
+  if (!value || typeof value !== 'object') return null;
+  const v = value as { count?: unknown; percentage?: unknown };
+  const count = typeof v.count === 'number' ? v.count : null;
+  const percentage = typeof v.percentage === 'number' ? v.percentage : null;
+  if (count === null || percentage === null) return null;
+  return { count, percentage };
+}
+
+function asColumnStatsSummary(value: unknown): ColumnStatsSummary | null {
+  if (!value || typeof value !== 'object') return null;
+  const v = value as { mean?: unknown; std?: unknown; min?: unknown; max?: unknown };
+  const mean = typeof v.mean === 'number' ? v.mean : null;
+  const std = typeof v.std === 'number' ? v.std : null;
+  const min = typeof v.min === 'number' ? v.min : null;
+  const max = typeof v.max === 'number' ? v.max : null;
+  if (mean === null || std === null || min === null || max === null) return null;
+  return { mean, std, min, max };
+}
+
 export default function DataAudit() {
   const queryClient = useQueryClient();
 
@@ -58,11 +81,14 @@ export default function DataAudit() {
   // Prepare outlier chart data
   const outlierChartData = audit?.outliers 
     ? Object.entries(audit.outliers)
-        .map(([col, data]: [string, any]) => ({
-          name: col.replace(/\(.*\)/g, '').trim().slice(0, 15),
-          outliers: data.count,
-          percentage: data.percentage,
-        }))
+        .map(([col, data]) => {
+          const summary = asOutlierSummary(data);
+          return {
+            name: col.replace(/\(.*\)/g, '').trim().slice(0, 15),
+            outliers: summary?.count ?? 0,
+            percentage: summary?.percentage ?? 0,
+          };
+        })
         .sort((a, b) => b.outliers - a.outliers)
         .slice(0, 8)
     : [];
@@ -99,7 +125,8 @@ export default function DataAudit() {
     );
   }
 
-  const qualityColor = audit?.dataQualityScore >= 80 ? 'emerald' : audit?.dataQualityScore >= 60 ? 'yellow' : 'red';
+  const qualityScore = audit?.dataQualityScore ?? 0;
+  const qualityColor = qualityScore >= 80 ? 'emerald' : qualityScore >= 60 ? 'yellow' : 'red';
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -278,11 +305,11 @@ export default function DataAudit() {
                   <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                     <div className="p-2 bg-slate-800/50 rounded-lg">
                       <span className="text-slate-500">Outliers Capped:</span>
-                      <span className="text-white ml-2 font-medium">{cleanMutation.data.stats.totalOutliersCapped}</span>
+                      <span className="text-white ml-2 font-medium">{String(cleanMutation.data.stats.totalOutliersCapped ?? '')}</span>
                     </div>
                     <div className="p-2 bg-slate-800/50 rounded-lg">
                       <span className="text-slate-500">Columns Affected:</span>
-                      <span className="text-white ml-2 font-medium">{cleanMutation.data.stats.columnsAffected}</span>
+                      <span className="text-white ml-2 font-medium">{String(cleanMutation.data.stats.columnsAffected ?? '')}</span>
                     </div>
                   </div>
                 )}
@@ -335,29 +362,32 @@ export default function DataAudit() {
                 <h3 className="font-semibold text-white">Key Metrics</h3>
               </div>
               <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
-                {Object.entries(audit.columnStats).slice(0, 5).map(([col, stats]: [string, any]) => (
-                  <div key={col} className="p-3 bg-slate-800/30 rounded-lg">
-                    <p className="text-xs text-slate-400 mb-2 truncate" title={col}>{col}</p>
-                    <div className="grid grid-cols-2 gap-2 text-[10px]">
-                      <div>
-                        <span className="text-slate-500">Mean:</span>
-                        <span className="text-white ml-1">{stats.mean}</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-500">Std:</span>
-                        <span className="text-white ml-1">{stats.std}</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-500">Min:</span>
-                        <span className="text-white ml-1">{stats.min}</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-500">Max:</span>
-                        <span className="text-white ml-1">{stats.max}</span>
+                {Object.entries(audit.columnStats).slice(0, 5).map(([col, stats]) => {
+                  const summary = asColumnStatsSummary(stats);
+                  return (
+                    <div key={col} className="p-3 bg-slate-800/30 rounded-lg">
+                      <p className="text-xs text-slate-400 mb-2 truncate" title={col}>{col}</p>
+                      <div className="grid grid-cols-2 gap-2 text-[10px]">
+                        <div>
+                          <span className="text-slate-500">Mean:</span>
+                          <span className="text-white ml-1">{summary?.mean ?? 0}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500">Std:</span>
+                          <span className="text-white ml-1">{summary?.std ?? 0}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500">Min:</span>
+                          <span className="text-white ml-1">{summary?.min ?? 0}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500">Max:</span>
+                          <span className="text-white ml-1">{summary?.max ?? 0}</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
