@@ -37,12 +37,13 @@ services:
       - key: DATA_STORE_DIR
         sync: false
 
-  - type: static
+  - type: web
     name: graceland-frontend
+    runtime: node
     plan: free
     rootDir: frontend
     buildCommand: npm ci && npm run build
-    staticPublishPath: dist
+    startCommand: npx serve -s dist -l $PORT
     envVars:
       - key: NODE_VERSION
         value: "20.18.0"
