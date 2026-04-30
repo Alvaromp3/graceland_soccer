@@ -21,7 +21,7 @@ _AI_REC_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 def _build_ai_cache_key(player_id: str, player: dict) -> str:
     metrics = player.get("metrics", {}) if isinstance(player, dict) else {}
     cache_payload = {
-        "version": "v6",
+        "version": "v7",
         "playerId": player_id,
         "team": data_service.get_current_team(),
         "model": getattr(openrouter_service, "model", "") or "",
@@ -49,30 +49,56 @@ def _build_standard_recommendation_report(
 ) -> str:
     factor_lines = "\n".join(f"- {factor}" for factor in (risk_factors or ["No major risk factors detected."]))
     recommendation_lines = "\n".join(f"- {item}" for item in (recommendations or ["Continue normal monitoring."]))
+    level = str(risk_level or "low").upper()
     lines = [
         "## Executive Summary",
-        f"{player_name} is currently assessed as **{risk_level.upper()} risk** based on the latest available training data.",
+        f"**{player_name}** is currently assessed as **{level} injury risk** based on the latest available training data.",
         "",
-        "## Risk Drivers",
+        "What this means for planning (next 72 hours):",
+        "- Treat this as a decision-support signal, not a diagnosis.",
+        "- Prioritize consistency: avoid sudden spikes in total load or high-speed exposure.",
+        "- Align the plan with availability, match minutes role, and staff observation (RPE/soreness).",
+        "",
+        "## Key Risk Drivers (why)",
         factor_lines,
         "",
-        "## Coaching Actions",
+        "## Recommended Coaching Actions (what to do now)",
         recommendation_lines,
+        "",
+        "## Session Design (practical translation)",
+        "- **Warm-up**: progressive build (mobility → activation → short accelerations).",
+        "- **Main block**: keep quality high; reduce chaos if risk is MED/HIGH (smaller-sided constraints, fewer maximal efforts).",
+        "- **Exposure**: deliberately dose high-speed and sprint exposure rather than letting it happen randomly.",
+        "- **Cooldown**: easy flush + breathing, then short tissue tolerance work (as appropriate).",
+        "",
+        "## Recovery & Monitoring (what to watch)",
+        "- Check morning readiness (sleep, soreness, subjective fatigue) and short movement screen (if available).",
+        "- Track **load**, **high-speed running / sprint distance**, and **top speed exposure** relative to the squad benchmark.",
+        "- Red flags: new pain, persistent tightness, unusual drop in speed/quality, or repeated spikes session-to-session.",
+        "",
+        "## Communication Notes (for staff)",
+        "- Agree one simple objective: *availability for next match/training block*.",
+        "- Document the decision: what you changed today, and what would make you change again within 48 hours.",
     ]
     if player_id and player_id != "team_average":
         lines.extend([
             "",
-            "## Player-specific checklist",
-            "- Map the bullets above to this athlete’s minutes role, set-piece load, and return-to-play status if applicable.",
-            "- Compare their next-session targets to team norms (Team Average) for load and high-speed exposure.",
-            "- Agree one observable trigger (e.g. soreness + spike in sprint yards) that changes the plan within 48 hours.",
+            "## Player-specific extras (use this as a checklist)",
+            "- Confirm **position/role** (starter, rotation, limited minutes) and reflect it in volume targets.",
+            "- Compare the athlete vs **Team Average** for load and high-speed exposure; aim for controlled deltas rather than extremes.",
+            "- If MED/HIGH risk: reduce peak demands first (max sprint distance, repeated accelerations), keep technical quality.",
+            "- Build one **if–then trigger** for the next 7 days (example): *If soreness ≥ 6/10 OR a sudden sprint-distance spike, then reduce high-speed exposures next session and shift to technical work.*",
+            "- Re-check within 24–48 hours after any change to ensure the trend improves (not just a single session).",
         ])
     elif player_id == "team_average":
         lines.extend([
             "",
-            "## Squad-level checklist",
-            "- Use Team Average as a benchmark: flag individuals consistently above/below squad load and sprint volume.",
-            "- Prioritize data hygiene: one export cadence and aligned session dates so the aggregate stays trustworthy.",
+            "## Squad-level next steps (use Team Average correctly)",
+            "- Use Team Average as a benchmark: flag individuals consistently **above/below** squad load and sprint volume.",
+            "- Segment by positional groups: compare defenders/mids/forwards separately (team-wide means can hide pockets of risk).",
+            "- Rotation planning: identify 3–5 players with sustained high load + high-speed exposure and protect them early in the week.",
+            "- Data hygiene: one export cadence and aligned session dates so the aggregate stays trustworthy (no missing sessions).",
+            "- Agree a weekly rhythm: planned high-speed exposures + planned deload day + planned recovery monitoring touchpoints.",
         ])
     return "\n".join(lines)
 

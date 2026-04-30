@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { 
   BarChart3, 
@@ -16,7 +16,8 @@ import {
   Bot,
   Sparkles,
   RefreshCw,
-  Clock
+  Clock,
+  Minus
 } from 'lucide-react';
 import {
   RadarChart,
@@ -66,7 +67,8 @@ export default function Analysis() {
   const { data: analytics } = useQuery({
     queryKey: ['analysis', 'analytics', currentTeam, selectedPlayer || 'team'],
     queryFn: () => analysisApi.getAnalytics(selectedPlayer || undefined),
-    enabled: !!dataStatus?.loaded && !!selectedPlayer && !!prediction,
+    // Show team/player comparisons immediately on selection (no need to run AI analysis first).
+    enabled: !!dataStatus?.loaded && !!selectedPlayer,
   });
 
   // OpenRouter status query (AI recommendations provider)
@@ -180,25 +182,6 @@ export default function Analysis() {
 
   const teamLabel = currentTeam === 'mens' ? 'Men\'s Team' : 'Women\'s Team';
 
-  // No data loaded state for current team
-  if (!dataStatus?.loaded) {
-    return (
-      <div className="min-h-[60vh] flex items-center justify-center">
-        <div className="panel panel--elevated p-8 max-w-md text-center">
-          <AlertTriangle className="w-10 h-10 mx-auto mb-4 text-[var(--text-tertiary)]" />
-          <h2 className="section-title mb-2">No data</h2>
-          <p className="caption mb-6">
-            Upload a CSV for {teamLabel} in the Dashboard to analyze risk.
-          </p>
-          <a href="/" className="btn btn--primary gap-2">
-            Go to Dashboard
-            <ArrowRight className="w-4 h-4" />
-          </a>
-        </div>
-      </div>
-    );
-  }
-
   // Generate radar chart data from player
   const getRadarData = () => {
     if (!selectedPlayerData) return [];
@@ -222,6 +205,75 @@ export default function Analysis() {
   };
 
   const percentileForSelected = analytics?.percentiles?.find((entry) => entry.playerId === selectedPlayer);
+
+  const teamBenchmark = useMemo(() => {
+    if (!teamAverage) return null;
+    const avgLoad = Number(teamAverage.avgLoad ?? 0);
+    const avgSpeed = Number(teamAverage.avgSpeed ?? 0);
+    const sessions = Number(teamAverage.sessions ?? 0);
+    return { avgLoad, avgSpeed, sessions };
+  }, [teamAverage]);
+
+  const deltas = useMemo(() => {
+    if (!selectedPlayerData || !teamBenchmark) return null;
+    const dLoad = selectedPlayerData.avgLoad - teamBenchmark.avgLoad;
+    const dSpeed = selectedPlayerData.avgSpeed - teamBenchmark.avgSpeed;
+    const dSessions = selectedPlayerData.sessions - teamBenchmark.sessions;
+    const pct = (v: number, base: number) => (base > 0 ? (v / base) * 100 : null);
+    return {
+      load: { delta: dLoad, pct: pct(dLoad, teamBenchmark.avgLoad) },
+      speed: { delta: dSpeed, pct: pct(dSpeed, teamBenchmark.avgSpeed) },
+      sessions: { delta: dSessions, pct: pct(dSessions, teamBenchmark.sessions) },
+    };
+  }, [selectedPlayerData, teamBenchmark]);
+
+  const coachSnapshot = useMemo(() => {
+    if (!selectedPlayerData || !deltas) return null;
+    const loadFlag =
+      deltas.load.pct === null
+        ? null
+        : deltas.load.pct >= 15
+          ? 'high'
+          : deltas.load.pct <= -15
+            ? 'low'
+            : 'normal';
+    const speedFlag =
+      deltas.speed.pct === null
+        ? null
+        : deltas.speed.pct >= 8
+          ? 'high'
+          : deltas.speed.pct <= -8
+            ? 'low'
+            : 'normal';
+    const sessionsFlag =
+      deltas.sessions.pct === null
+        ? null
+        : deltas.sessions.pct >= 20
+          ? 'high'
+          : deltas.sessions.pct <= -20
+            ? 'low'
+            : 'normal';
+    return { loadFlag, speedFlag, sessionsFlag };
+  }, [selectedPlayerData, deltas]);
+
+  // No data loaded state for current team (must appear after hooks)
+  if (!dataStatus?.loaded) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <div className="panel panel--elevated p-8 max-w-md text-center">
+          <AlertTriangle className="w-10 h-10 mx-auto mb-4 text-[var(--text-tertiary)]" />
+          <h2 className="section-title mb-2">No data</h2>
+          <p className="caption mb-6">
+            Upload a CSV for {teamLabel} in the Dashboard to analyze risk.
+          </p>
+          <a href="/" className="btn btn--primary gap-2">
+            Go to Dashboard
+            <ArrowRight className="w-4 h-4" />
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -283,7 +335,7 @@ export default function Analysis() {
                 ) : (
                   <>
                     <Activity className="w-5 h-5" />
-                    Analyze (OpenRouter)
+                    Generate coach report
                   </>
                 )}
               </button>
@@ -407,6 +459,98 @@ export default function Analysis() {
 
         {/* Right Panel - Results */}
         <div className="lg:col-span-2 space-y-4">
+          {/* Team comparison snapshot (always visible once a player is selected) */}
+          {selectedPlayerData && teamBenchmark && deltas && (
+            <div className="panel panel--elevated p-6 bg-white animate-slide-in-up">
+              <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+                <div className="flex items-center gap-2">
+                  <BarChart3 className="w-5 h-5 text-[#64748b]" />
+                  <h3 className="font-semibold text-[#1e293b]">Compared to Team Average</h3>
+                </div>
+                {percentileForSelected && (
+                  <div className="text-xs text-[#64748b]">
+                    Load {percentileForSelected.loadPercentile.toFixed(0)}% · Speed {percentileForSelected.speedPercentile.toFixed(0)}% · Sessions {percentileForSelected.sessionPercentile.toFixed(0)}%
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {[
+                  {
+                    label: 'Load',
+                    value: selectedPlayerData.avgLoad,
+                    team: teamBenchmark.avgLoad,
+                    delta: deltas.load.delta,
+                    pct: deltas.load.pct,
+                    unit: '',
+                    flag: coachSnapshot?.loadFlag,
+                  },
+                  {
+                    label: 'Speed',
+                    value: selectedPlayerData.avgSpeed,
+                    team: teamBenchmark.avgSpeed,
+                    delta: deltas.speed.delta,
+                    pct: deltas.speed.pct,
+                    unit: 'mph',
+                    flag: coachSnapshot?.speedFlag,
+                  },
+                  {
+                    label: 'Sessions',
+                    value: selectedPlayerData.sessions,
+                    team: teamBenchmark.sessions,
+                    delta: deltas.sessions.delta,
+                    pct: deltas.sessions.pct,
+                    unit: '',
+                    flag: coachSnapshot?.sessionsFlag,
+                  },
+                ].map((m) => {
+                  const up = m.delta > 0;
+                  const abs = Math.abs(m.delta);
+                  const icon =
+                    abs < 0.0001 ? <Minus className="w-4 h-4 text-[#94a3b8]" /> : up ? <TrendingUp className="w-4 h-4 text-[#10b981]" /> : <ArrowRight className="w-4 h-4 text-[#f59e0b] rotate-180" />;
+                  const badge =
+                    m.flag === 'high'
+                      ? { bg: 'bg-[#dc2626]/10', text: 'text-[#dc2626]', label: 'Above team' }
+                      : m.flag === 'low'
+                        ? { bg: 'bg-[#1e40af]/10', text: 'text-[#1e40af]', label: 'Below team' }
+                        : { bg: 'bg-[#f8fafc]', text: 'text-[#64748b]', label: 'Near team' };
+                  return (
+                    <div key={m.label} className="p-4 rounded-lg border border-[#e2e8f0] bg-[#f8fafc]">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-xs font-semibold text-[#64748b] uppercase">{m.label}</p>
+                        <span className={`text-[10px] px-2 py-1 rounded ${badge.bg} ${badge.text}`}>{badge.label}</span>
+                      </div>
+                      <div className="flex items-end justify-between gap-3">
+                        <div>
+                          <p className="text-2xl font-bold text-[#1e293b]">{m.value}{m.unit ? ` ${m.unit}` : ''}</p>
+                          <p className="text-[11px] text-[#64748b]">Team avg: {m.team}{m.unit ? ` ${m.unit}` : ''}</p>
+                        </div>
+                        <div className="text-right">
+                          <div className="inline-flex items-center gap-1">
+                            {icon}
+                            <span className="text-sm font-semibold text-[#334155]">
+                              {abs < 0.0001 ? '0' : `${up ? '+' : '-'}${abs.toFixed(m.label === 'Sessions' ? 0 : 1)}`}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-[#64748b]">
+                            {m.pct === null ? '—' : `${m.pct >= 0 ? '+' : ''}${m.pct.toFixed(0)}% vs team`}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="mt-4 p-3 rounded-lg border border-[#e2e8f0] bg-white">
+                <p className="text-sm font-semibold text-[#1e293b] mb-1">Coach snapshot</p>
+                <p className="text-sm text-[#64748b]">
+                  Use this to set next-session targets. Then click <strong>Generate coach report</strong> for risk drivers + action plan.
+                </p>
+              </div>
+            </div>
+          )}
+
           {prediction ? (
             <>
               {/* No Recent Data Warning */}

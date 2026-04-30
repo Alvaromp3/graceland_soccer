@@ -249,6 +249,7 @@ class OpenRouterService:
         is_team_agg = player_data.get("id") == "team_average"
 
         cache_key_payload = {
+            "prompt_version": "v2-budget-structure",
             "model": self.model,
             "max_tokens": self.effective_max_tokens(),
             "player_name": player_name,
@@ -283,16 +284,17 @@ class OpenRouterService:
 
         if self.budget_mode:
             user_prompt = (
-                "COACHING REPORT (concise; stay within output budget)\n\n"
+                "COACHING REPORT (professional; moderate length)\n\n"
                 f"{context}\n\n"
                 f"{squad_vs_individual}"
                 "Write a tight professional report.\n"
-                "- Target ~160–240 words total. Use bullets.\n"
+                "- Target ~380–520 words total. Use bullets and short paragraphs.\n"
                 "- Do NOT invent metrics; if unknown, say so briefly.\n\n"
-                "## EXECUTIVE SUMMARY (2 short bullets)\n"
-                "## TOP RISK DRIVERS (3-4 bullets)\n"
-                "## NEXT 3 TRAINING ACTIONS (3 bullets)\n"
-                "## RECOVERY & MONITORING (3-4 bullets)\n"
+                "## EXECUTIVE SUMMARY (3-5 bullets)\n"
+                "## KEY METRICS SNAPSHOT (6-10 bullets; use what is available)\n"
+                "## TOP RISK DRIVERS (5-7 bullets)\n"
+                "## NEXT 72 HOURS PLAN (6-9 bullets; session design + minutes/intensity guidance)\n"
+                "## RECOVERY & MONITORING (6-10 bullets incl. red flags + what-to-do)\n"
             )
         else:
             user_prompt = (
