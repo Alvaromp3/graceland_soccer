@@ -71,13 +71,6 @@ export default function Analysis() {
     enabled: !!dataStatus?.loaded && !!selectedPlayer,
   });
 
-  // OpenRouter status query (AI recommendations provider)
-  const { data: openRouterStatus } = useQuery({
-    queryKey: ['openrouter', 'status'],
-    queryFn: analysisApi.getOpenRouterStatus,
-    staleTime: 30000,
-  });
-
   // One backend round-trip: ML risk + OpenRouter coach text (no duplicate predict_risk / no double timeout)
   const analyzeMutation = useMutation({
     mutationFn: async (playerId: string) => {
@@ -108,7 +101,7 @@ export default function Analysis() {
       setAiRecommendations({
         aiSuccess: false,
         aiError: error.message || 'Failed to analyze',
-        aiRecommendations: 'Analysis request failed. Ensure backend and OpenRouter are running, then try again.',
+        aiRecommendations: 'Analysis request failed. Ensure the backend API is running and try again.',
         playerId: selectedPlayer,
         playerName: selectedPlayerData?.name || 'Unknown',
         aiSource: 'openrouter',
@@ -743,7 +736,7 @@ export default function Analysis() {
                     <div>
                       <h3 className="font-semibold text-[#1e293b]">AI Coach Recommendations</h3>
                       <p className="text-xs text-[#64748b]">
-                        Powered by OpenRouter {openRouterStatus?.status === 'ready' ? '(Connected)' : '(Not configured)'}
+                        Session targets, load decisions, and staff-ready talking points from your GPS data.
                       </p>
                     </div>
                   </div>
@@ -767,20 +760,6 @@ export default function Analysis() {
                   </button>
                 </div>
 
-                {/* OpenRouter Status Badge */}
-                {openRouterStatus && (
-                  <div className={`mb-4 px-3 py-2 rounded-lg text-xs inline-flex items-center gap-2 ${
-                    openRouterStatus.status === 'ready' 
-                      ? 'bg-[var(--risk-low)]/10 text-[var(--risk-low)] border border-[var(--risk-low)]/30'
-                      : 'bg-[var(--risk-medium)]/10 text-[var(--risk-medium)] border border-[var(--risk-medium)]/30'
-                  }`} style={openRouterStatus.status !== 'ready' ? { backgroundColor: 'rgba(255, 193, 7, 0.15)' } : {}}>
-                    <span className={`w-2 h-2 rounded-full ${openRouterStatus.status === 'ready' ? 'bg-[#10b981]' : 'bg-[#ffc107]'}`} />
-                    {openRouterStatus.status === 'ready' 
-                      ? `OpenRouter connected - Model: ${openRouterStatus.defaultModel}`
-                      : openRouterStatus.message}
-                  </div>
-                )}
-
                 {/* Error Message */}
                 {analyzeMutation.isError && (
                   <div className="mb-4 p-3 bg-[#dc2626]/10 border border-[#dc2626]/30 rounded-lg">
@@ -801,11 +780,6 @@ export default function Analysis() {
                       <span className="text-sm font-semibold text-[#1e293b]">
                         {aiRecommendations.aiSuccess ? 'AI Analysis' : 'Standard Recommendations'}
                       </span>
-                      {aiRecommendations.aiSource && (
-                        <span className="text-xs text-[#64748b] bg-[#e2e8f0] px-2 py-1 rounded">
-                          source: {aiRecommendations.aiSource}
-                        </span>
-                      )}
                       {!aiRecommendations.aiSuccess && aiRecommendations.aiError && (
                         <span className="text-xs text-[#dc2626] bg-[#dc2626]/10 px-2 py-1 rounded">
                           {aiRecommendations.aiError}
@@ -853,7 +827,7 @@ export default function Analysis() {
                     <p className="text-[#334155] font-semibold mb-1">About this prediction</p>
                     <p>
                       Risk analysis uses data from the <strong className="text-[#1e293b]">last 45 days only</strong>. If no recent training data is available, 
-                      risk is set to LOW. AI recommendations are powered by OpenRouter.
+                      risk is set to LOW. AI recommendations synthesize your uploaded training data and support — not replace — clinical and coaching judgment.
                     </p>
                   </div>
                 </div>

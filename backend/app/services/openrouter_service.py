@@ -15,31 +15,31 @@ _OPENROUTER_CACHE: Dict[str, Tuple[float, Dict[str, Any]]] = {}
 OPENROUTER_BASE_URL = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
 
 # Profiles:
-# - cheap: lowest-cost practical coach report
-# - balanced: better wording/consistency at modest cost
-# - quality: stronger model when cost is less sensitive
-OPENROUTER_PROFILE = os.environ.get("OPEN_ROUTER_PROFILE", "cheap").strip().lower()
+# - cheap: lowest-cost (shorter output)
+# - balanced (default): strong model + full-length coach brief
+# - quality: strongest model for staff-facing depth
+OPENROUTER_PROFILE = os.environ.get("OPEN_ROUTER_PROFILE", "balanced").strip().lower()
 _PROFILE_DEFAULTS = {
     "cheap": {
         "model": "google/gemini-2.5-flash-lite:nitro",
-        "max_tokens": 280,
+        "max_tokens": 480,
         "include_analytics": False,
     },
     "balanced": {
-        "model": "openai/gpt-4o-mini",
-        "max_tokens": 220,
-        "include_analytics": False,
+        "model": "google/gemini-2.5-flash",
+        "max_tokens": 900,
+        "include_analytics": True,
     },
     "quality": {
-        "model": "openai/gpt-4.1-mini",
-        "max_tokens": 320,
+        "model": "google/gemini-2.5-pro",
+        "max_tokens": 1200,
         "include_analytics": True,
     },
 }
 _SELECTED_PROFILE = _PROFILE_DEFAULTS.get(OPENROUTER_PROFILE, _PROFILE_DEFAULTS["cheap"])
 DEFAULT_OPENROUTER_MODEL = os.environ.get("OPEN_ROUTER_MODEL", _SELECTED_PROFILE["model"])
 # Hard cap on output tokens to avoid accidental huge bills (override ceiling via OPEN_ROUTER_MAX_TOKENS_CAP)
-ABSOLUTE_MAX_OUTPUT_TOKENS = int(os.environ.get("OPEN_ROUTER_MAX_TOKENS_CAP", "512"))
+ABSOLUTE_MAX_OUTPUT_TOKENS = int(os.environ.get("OPEN_ROUTER_MAX_TOKENS_CAP", "1536"))
 # Budget mode (default on): shorter prompts/context + lower default max_tokens → fewer billed tokens.
 OPENROUTER_BUDGET = os.environ.get("OPEN_ROUTER_BUDGET", "1") == "1"
 DEFAULT_MAX_TOKENS = int(
@@ -49,15 +49,16 @@ DEFAULT_MAX_TOKENS = int(
     )
 )
 # HTTP read timeout for OpenRouter (LLM latency). Default allows completion without Axios dying first.
-OPENROUTER_TIMEOUT_MAX_S = int(os.environ.get("OPEN_ROUTER_TIMEOUT_MAX_S", "28"))
-DEFAULT_TIMEOUT_S = int(os.environ.get("OPEN_ROUTER_TIMEOUT_S", str(min(25, OPENROUTER_TIMEOUT_MAX_S))))
+OPENROUTER_TIMEOUT_MAX_S = int(os.environ.get("OPEN_ROUTER_TIMEOUT_MAX_S", "90"))
+DEFAULT_TIMEOUT_S = int(os.environ.get("OPEN_ROUTER_TIMEOUT_S", str(min(75, OPENROUTER_TIMEOUT_MAX_S))))
 DEFAULT_CACHE_TTL_S = int(os.environ.get("OPEN_ROUTER_CACHE_TTL_S", "900"))
-# When budget mode: skip heavy analytics aggregation unless OPEN_ROUTER_INCLUDE_ANALYTICS=1
-_DEFAULT_INCLUDE_ANALYTICS = os.environ.get(
-    "OPEN_ROUTER_INCLUDE_ANALYTICS",
-    "1" if _SELECTED_PROFILE["include_analytics"] and not OPENROUTER_BUDGET else "0",
-)
-INCLUDE_ANALYTICS = _DEFAULT_INCLUDE_ANALYTICS == "1"
+# Analytics (ACWR, rolling load) add input tokens but materially improve coach briefs.
+# Override with OPEN_ROUTER_INCLUDE_ANALYTICS=0 to disable.
+_ia_env = os.environ.get("OPEN_ROUTER_INCLUDE_ANALYTICS")
+if _ia_env is not None:
+    INCLUDE_ANALYTICS = _ia_env == "1"
+else:
+    INCLUDE_ANALYTICS = bool(_SELECTED_PROFILE.get("include_analytics", False))
 
 
 class OpenRouterService:
@@ -249,7 +250,7 @@ class OpenRouterService:
         is_team_agg = player_data.get("id") == "team_average"
 
         cache_key_payload = {
-            "prompt_version": "v3-coach-pro",
+            "prompt_version": "v4-coach-elite",
             "model": self.model,
             "max_tokens": self.effective_max_tokens(),
             "player_name": player_name,
@@ -266,14 +267,16 @@ class OpenRouterService:
             return out
 
         system_prompt = (
-            "You are a UEFA-level head coach and accredited performance director writing for another head coach "
-            "and technical staff. Tone: decisive, professional, no fluff. Ground every claim in the supplied metrics; "
-            "when data is thin, say what is missing and what to measure next. "
-            "Prioritize: (1) injury risk & tissue tolerance vs load, (2) sprint / high-speed exposure and recovery, "
-            "(3) ACWR / rolling load interpretation when provided, (4) session design (objectives, volume caps, "
-            "intensity distribution), (5) return-to-play / taper judgment only when risk is elevated, "
-            "(6) communication hooks with medical/S&C (red flags, RTP criteria). "
-            "Avoid generic wellness advice; each bullet must tie to a metric, trend, or clear decision."
+            "You are an elite head coach and performance director (UEFA Pro / high-performance soccer). "
+            "Your reader is a college or professional head coach who will change tomorrow's session based on this brief. "
+            "Rules: (1) Every recommendation must cite specific numbers from the context OR state exactly what to measure next "
+            "and why. (2) No generic wellness platitudes (sleep better, stretch more) unless tied to a metric gap or staff action. "
+            "(3) Cover: training-load progression & spike risk, high-speed / sprint exposure vs positional demands, "
+            "fatigue signals from work ratio and HR load, acute:chronic and rolling load when provided, "
+            "fixture congestion implications if load variance is high, and clear medical/S&C escalation triggers. "
+            "(4) Include at least three concrete session-design choices (e.g. cap sprint yards, split starter minutes, "
+            "modify practice structure) and at least two 'if we see X on GPS next session, then Y' decision rules. "
+            "(5) Tone: direct, confident, staff-room brevity — not academic prose."
         )
         squad_vs_individual = (
             "This selection is TEAM AVERAGE (aggregate). Emphasize squad load management, rotation, positional groups, "
@@ -289,38 +292,39 @@ class OpenRouterService:
 
         if self.budget_mode:
             user_prompt = (
-                "COACHING REPORT — staff-facing (high signal)\n\n"
+                "COACHING REPORT — decision-grade for today's staff meeting\n\n"
                 f"{context}\n\n"
                 f"{squad_vs_individual}"
-                "Write for a coach who will act on this today.\n"
-                "- Target ~480–700 words. Short paragraphs + bullets; every section must reference concrete numbers from context.\n"
-                "- If ACWR / rolling load / outliers appear in context, interpret them (what they imply for the next micro-cycle).\n"
-                "- Do NOT invent metrics; if a field is missing, one line: what to log next session.\n\n"
-                "## EXECUTIVE SUMMARY (4-6 bullets: readiness, main constraint, decision)\n"
-                "## LOAD & SPEED PROFILE (6-10 bullets: distribution of stress, sprint exposure, work ratio meaning)\n"
-                "## INJURY / FATIGUE RISK (6-10 bullets: mechanisms tied to listed risk factors; be explicit)\n"
-                "## TRAINING PLAN — NEXT 3–5 DAYS (8-12 bullets: session types, volume caps, intensity targets, "
-                "minutes guidance for starters vs rotation; flag congested-fixture adjustments if implied by data)\n"
-                "## RECOVERY, MONITORING & FLAGS (6-10 bullets: subjective markers, objective re-checks, "
-                "when to pull load vs when to hold steady; one clear escalation trigger)\n"
-                "## STAFF COORDINATION (4-6 bullets: who does what — coach / medical / S&C; what to brief the player)\n"
+                "Write for a coach who assigns minutes and sets session objectives tomorrow.\n"
+                "- Length: ~550–800 words. Dense bullets; cite numbers from context in almost every bullet.\n"
+                "- Start with the ONE highest-leverage risk or opportunity this athlete presents this week.\n"
+                "- If ACWR / rolling load / outliers appear: translate into load progression rules for the next 7 days.\n"
+                "- Name positional demands (pressing volume, repeat sprints, defensive transitions) using position when known.\n"
+                "- Do NOT invent metrics; for each missing datapoint, give one logging action (who/when).\n\n"
+                "## EXECUTIVE SNAPSHOT (5 bullets: readiness, constraint, go/no-go style call for next match block)\n"
+                "## LOAD & SPEED REALITY (8-12 bullets: internal vs external load story; variance/spikes; sprint + top speed)\n"
+                "## INJURY & FATIGUE MECHANISMS (8-12 bullets: tie each to risk factors + GPS numbers; tissue themes)\n"
+                "## NEXT 3–5 DAYS — SESSION BLUEPRINT (10-14 bullets: day themes, caps, speed prescriptions, "
+                "starter vs rotation minutes logic)\n"
+                "## MONITORING & ESCALATION (6-10 bullets: GPS/trigger thresholds; when to loop medical/S&C; "
+                "player-facing messaging — honest, short)\n"
             )
         else:
             user_prompt = (
-                "COACHING REPORT REQUEST — elite staff depth\n\n"
+                "COACHING REPORT — full staff packet\n\n"
                 f"{context}\n\n"
                 f"{squad_vs_individual}"
-                "Write a professional coaching report.\n"
-                "- Target 750–1100 words. Bullets + tight prose; tie recommendations to metrics and to positional demands.\n"
-                "- Interpret trends (rolling load, ACWR, outliers) when present; state uncertainty when absent.\n"
-                "- Do NOT invent missing metrics; propose one concrete data-capture fix per gap.\n\n"
-                "Sections:\n"
-                "## EXECUTIVE SUMMARY (4-6 sentences: game model link + risk + plan)\n"
-                "## PERFORMANCE & LOAD SIGNATURE (10-14 bullets)\n"
-                "## RISK & MECHANISTIC DRIVERS (10-14 bullets; cite numbers)\n"
-                "## 7-DAY MICRO-CYCLE (Day-by-day bullets: objective, volume, intensity, speed exposure, set-pieces load)\n"
-                "## RECOVERY, MONITORING & RTP GUARDRAILS (12-16 bullets; red flags + downgrade/upgrade rules)\n"
-                "## STAFF & PLAYER BRIEF (6-8 bullets: who to align with, what to tell the athlete)\n"
+                "Deliver the depth of a pre-match technical meeting.\n"
+                "- Length: ~900–1300 words. Bullets + short paragraphs; numbers in every major section.\n"
+                "- Integrate rolling load, ACWR, outliers when present; if absent, say what that uncertainty implies for caution.\n"
+                "- Include opponent-agnostic session priorities (pressing model, transition exposure) grounded in this athlete's load signature.\n"
+                "- Do NOT fabricate metrics; one concrete fix per data gap.\n\n"
+                "## EXECUTIVE SUMMARY (6-8 sentences: singular narrative — why this profile matters now)\n"
+                "## PERFORMANCE & LOAD SIGNATURE (12-16 bullets; contrast chronic vs acute stress)\n"
+                "## RISK & MECHANISTIC DRIVERS (12-16 bullets; cite metrics; hamstring/ACL workload themes when relevant)\n"
+                "## 7-DAY MICRO-CYCLE (Day-by-day: objective, volume, intensity zones, sprint prescription, set-piece load)\n"
+                "## RECOVERY, MONITORING & RTP GUARDRAILS (14-18 bullets; downgrade/upgrade rules; red-line symptoms)\n"
+                "## STAFF & PLAYER BRIEF (8-10 bullets: functional roles; what the athlete hears vs what stays internal)\n"
             )
 
         payload: Dict[str, Any] = {
@@ -329,12 +333,14 @@ class OpenRouterService:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            "temperature": 0.45 if self.budget_mode else 0.6,
-            "top_p": 0.85 if self.budget_mode else 0.9,
+            "temperature": 0.45 if self.budget_mode else 0.55,
+            "top_p": 0.88 if self.budget_mode else 0.9,
             "max_tokens": self.effective_max_tokens(),
         }
         if self.profile == "cheap":
-            payload["temperature"] = 0.35
+            payload["temperature"] = 0.38
+        elif self.profile == "balanced":
+            payload["temperature"] = 0.42
 
         url = f"{self.base_url}/chat/completions"
         try:
