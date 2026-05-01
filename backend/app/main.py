@@ -15,23 +15,22 @@ warnings.filterwarnings(
     message=r"urllib3 .* doesn't match a supported version!",
 )
 
-try:
-    from sklearn.exceptions import InconsistentVersionWarning  # type: ignore
-    warnings.filterwarnings("ignore", category=InconsistentVersionWarning)
-except Exception:
-    pass
-
-# LightGBM / sklearn: predicting with ndarray when model was trained with feature names
+# Avoid importing sklearn here — it adds seconds to cold start on small Render instances.
+warnings.filterwarnings(
+    "ignore",
+    message=r"Trying to unpickle estimator.*",
+)
 warnings.filterwarnings(
     "ignore",
     message=r"X does not have valid feature names, but .* was fitted with feature names",
+    category=UserWarning,
 )
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 
 import logging
 import time
@@ -96,8 +95,9 @@ class RequestTimingMiddleware(BaseHTTPMiddleware):
                 pass
 
 
-# API key runs inside CORS so error responses still pass through CORSMiddleware.
+# CORS must be outermost (add last) so OPTIONS and error bodies still get CORS headers.
 app.add_middleware(APIKeyMiddleware)
+app.add_middleware(RequestTimingMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_allowed_origins(),
@@ -105,7 +105,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.add_middleware(RequestTimingMiddleware)
 
 app.include_router(dashboard.router, prefix="/api")
 app.include_router(players.router, prefix="/api")
@@ -120,6 +119,17 @@ async def root():
     return {"message": "Elite Sports Performance Analytics API", "status": "running"}
 
 
+@app.head("/")
+async def root_head():
+    """Render and some proxies probe with HEAD; avoid 405 on cold paths."""
+    return Response(status_code=200)
+
+
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
+
+
+@app.head("/health")
+async def health_head():
+    return Response(status_code=200)

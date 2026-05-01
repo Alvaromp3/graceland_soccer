@@ -10,37 +10,103 @@ import logging
 import threading
 from datetime import datetime
 
-from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split, cross_val_score
-from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-from sklearn.ensemble import GradientBoostingRegressor, RandomForestClassifier, RandomForestRegressor
-from sklearn.ensemble import GradientBoostingClassifier
-from sklearn.pipeline import Pipeline
+# Heavy ML stack is imported lazily on first use so Render cold-starts stay fast
+# and `/health` does not pull sklearn + optional boosters into memory.
+_ml_import_lock = threading.Lock()
+_ml_imports_ready = False
+StandardScaler: Any = None  # type: ignore[assignment]
+train_test_split: Any = None
+cross_val_score: Any = None
+r2_score: Any = None
+mean_absolute_error: Any = None
+mean_squared_error: Any = None
+accuracy_score: Any = None
+precision_score: Any = None
+recall_score: Any = None
+f1_score: Any = None
+GradientBoostingRegressor: Any = None
+RandomForestClassifier: Any = None
+RandomForestRegressor: Any = None
+GradientBoostingClassifier: Any = None
+Pipeline: Any = None
+XGBOOST_AVAILABLE = False
+LIGHTGBM_AVAILABLE = False
+CATBOOST_AVAILABLE = False
+LGBMClassifier: Any = None
+LGBMRegressor: Any = None
 
-try:
-    from sklearn.exceptions import InconsistentVersionWarning  # type: ignore
-    warnings.filterwarnings("ignore", category=InconsistentVersionWarning)
-except Exception:
-    pass
 
-try:
-    from xgboost import XGBClassifier, XGBRegressor
-    XGBOOST_AVAILABLE = True
-except ImportError:
-    XGBOOST_AVAILABLE = False
+def _ensure_ml_imports() -> None:
+    global _ml_imports_ready
+    global StandardScaler, train_test_split, cross_val_score, r2_score, mean_absolute_error, mean_squared_error
+    global accuracy_score, precision_score, recall_score, f1_score
+    global GradientBoostingRegressor, RandomForestClassifier, RandomForestRegressor, GradientBoostingClassifier, Pipeline
+    global XGBOOST_AVAILABLE, LIGHTGBM_AVAILABLE, CATBOOST_AVAILABLE, LGBMClassifier, LGBMRegressor
 
-try:
-    from lightgbm import LGBMClassifier, LGBMRegressor
-    LIGHTGBM_AVAILABLE = True
-except ImportError:
-    LIGHTGBM_AVAILABLE = False
+    if _ml_imports_ready:
+        return
+    with _ml_import_lock:
+        if _ml_imports_ready:
+            return
+        try:
+            from sklearn.exceptions import InconsistentVersionWarning  # type: ignore
 
-try:
-    from catboost import CatBoostClassifier, CatBoostRegressor
-    CATBOOST_AVAILABLE = True
-except ImportError:
-    CATBOOST_AVAILABLE = False
+            warnings.filterwarnings("ignore", category=InconsistentVersionWarning)
+        except Exception:
+            pass
+
+        from sklearn.preprocessing import StandardScaler as _StandardScaler
+        from sklearn.model_selection import train_test_split as _train_test_split, cross_val_score as _cross_val_score
+        from sklearn.metrics import r2_score as _r2_score, mean_absolute_error as _mean_absolute_error, mean_squared_error as _mean_squared_error
+        from sklearn.metrics import accuracy_score as _accuracy_score, precision_score as _precision_score, recall_score as _recall_score, f1_score as _f1_score
+        from sklearn.ensemble import GradientBoostingRegressor as _GradientBoostingRegressor
+        from sklearn.ensemble import RandomForestClassifier as _RandomForestClassifier, RandomForestRegressor as _RandomForestRegressor
+        from sklearn.ensemble import GradientBoostingClassifier as _GradientBoostingClassifier
+        from sklearn.pipeline import Pipeline as _Pipeline
+
+        StandardScaler = _StandardScaler
+        train_test_split = _train_test_split
+        cross_val_score = _cross_val_score
+        r2_score = _r2_score
+        mean_absolute_error = _mean_absolute_error
+        mean_squared_error = _mean_squared_error
+        accuracy_score = _accuracy_score
+        precision_score = _precision_score
+        recall_score = _recall_score
+        f1_score = _f1_score
+        GradientBoostingRegressor = _GradientBoostingRegressor
+        RandomForestClassifier = _RandomForestClassifier
+        RandomForestRegressor = _RandomForestRegressor
+        GradientBoostingClassifier = _GradientBoostingClassifier
+        Pipeline = _Pipeline
+
+        try:
+            import xgboost  # noqa: F401
+
+            XGBOOST_AVAILABLE = True
+        except ImportError:
+            XGBOOST_AVAILABLE = False
+
+        try:
+            from lightgbm import LGBMClassifier as _LGBMClassifier, LGBMRegressor as _LGBMRegressor
+
+            LGBMClassifier = _LGBMClassifier
+            LGBMRegressor = _LGBMRegressor
+            LIGHTGBM_AVAILABLE = True
+        except ImportError:
+            LIGHTGBM_AVAILABLE = False
+            LGBMClassifier = None
+            LGBMRegressor = None
+
+        try:
+            import catboost  # noqa: F401
+
+            CATBOOST_AVAILABLE = True
+        except ImportError:
+            CATBOOST_AVAILABLE = False
+
+        _ml_imports_ready = True
+
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +140,7 @@ class MLService:
             self._models_loaded = True
     
     def _load_saved_models(self):
+        _ensure_ml_imports()
         # Ensure models directory exists
         os.makedirs(MODELS_DIR, exist_ok=True)
         
@@ -136,6 +203,7 @@ class MLService:
         logger.info(f"Model loading complete - Load: {self.load_pipeline is not None}, Risk: {self.risk_pipeline is not None}")
     
     def get_available_algorithms(self) -> Dict[str, List[Dict[str, str]]]:
+        _ensure_ml_imports()
         regression_algos = [
             {'id': 'gradient_boosting', 'name': 'Gradient Boosting', 'available': True},
             {'id': 'random_forest', 'name': 'Random Forest', 'available': True},
@@ -161,13 +229,14 @@ class MLService:
         return GradientBoostingRegressor(n_estimators=100, max_depth=5, random_state=42)
     
     def _get_classifier(self, algorithm: str = 'lightgbm'):
-        if LIGHTGBM_AVAILABLE:
+        if LIGHTGBM_AVAILABLE and LGBMClassifier is not None:
             return LGBMClassifier(n_estimators=100, max_depth=5, random_state=42, verbose=-1)
         else:
             return GradientBoostingClassifier(n_estimators=100, max_depth=5, random_state=42)
     
     def train_load_model(self, df: pd.DataFrame, feature_cols: List[str], 
                          algorithm: str = 'gradient_boosting') -> Dict[str, Any]:
+        _ensure_ml_imports()
         start_time = time.time()
         
         target_col = 'Player Load'
@@ -262,6 +331,7 @@ class MLService:
     
     def train_risk_model(self, df: pd.DataFrame, feature_cols: List[str],
                          algorithm: str = 'random_forest') -> Dict[str, Any]:
+        _ensure_ml_imports()
         start_time = time.time()
         
         load_col = 'Player Load'

@@ -434,12 +434,26 @@ export default function Rankings() {
         </Chart3D>
       )}
 
-      {/* Full ranking - clean list */}
-      <div className="card overflow-hidden bg-white">
-        <div className="px-6 py-4 border-b border-[#e2e8f0] bg-white">
-          <h2 className="text-lg font-bold text-[#1e293b]">{currentMetric.name} — Full Ranking</h2>
-          <p className="text-sm text-[#64748b] mt-0.5">
-            {rankings?.length ?? 0} players · unit: {currentMetric.unit || '—'}
+      {/* Full ranking — table-style layout, readable at all widths */}
+      <div className="card overflow-hidden bg-white shadow-sm">
+        <div className="px-4 sm:px-6 py-4 border-b border-[#e2e8f0] bg-gradient-to-r from-[#f8fafc] to-white">
+          <h2 className="text-lg sm:text-xl font-bold text-[#1e293b] tracking-tight">
+            {currentMetric.name}
+            <span className="font-semibold text-[#64748b]"> — Full ranking</span>
+          </h2>
+          <p className="text-sm text-[#64748b] mt-1">
+            <span className="font-medium text-[#475569]">{rankings?.length ?? 0}</span> players
+            <span className="mx-2 text-[#cbd5e1]">·</span>
+            Unit: <span className="font-medium text-[#334155]">{currentMetric.unit || '—'}</span>
+            {stats != null && (
+              <>
+                <span className="mx-2 text-[#cbd5e1]">·</span>
+                Team avg:{' '}
+                <span className="font-semibold tabular-nums" style={{ color: currentMetric.color }}>
+                  {formatValue(stats.avgValue)}
+                </span>
+              </>
+            )}
           </p>
         </div>
 
@@ -455,57 +469,159 @@ export default function Rankings() {
             <p className="text-[#64748b] text-sm mt-2">Upload data in Dashboard to see rankings.</p>
           </div>
         ) : (
-          <div className="divide-y divide-[#e2e8f0]">
-            {rankings.map((player) => {
-              const value = player.metrics[currentMetric.key] || 0;
-              const isTopThree = player.rank <= 3;
-              const maxValue = Math.max(...rankings.map((p) => p.metrics[currentMetric.key] || 0));
-              const percentage = maxValue > 0 ? (value / maxValue) * 100 : 0;
-              const isAboveAvg = stats && value > stats.avgValue;
+          <div className="max-h-[min(70vh,720px)] overflow-y-auto overscroll-contain">
+            {/* Sticky column headers (desktop) */}
+            <div
+              className="sticky top-0 z-10 hidden sm:grid gap-3 px-4 sm:px-6 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-[#64748b] bg-[#f8fafc]/95 backdrop-blur-sm border-b border-[#e2e8f0]"
+              style={{
+                gridTemplateColumns: '2.75rem 2.75rem minmax(0,1fr) 5.5rem minmax(4rem,1fr) 4.25rem 5.5rem',
+              }}
+            >
+              <span className="text-center">#</span>
+              <span />
+              <span>Player</span>
+              <span className="text-right">Value</span>
+              <span className="pl-1">vs max</span>
+              <span className="text-right">Sess.</span>
+              <span className="text-center">Avg</span>
+            </div>
 
-              return (
-                <div
-                  key={player.name}
-                  className={`flex flex-wrap items-center gap-4 px-6 py-4 transition-colors hover:bg-[#f8fafc] sm:flex-nowrap ${
-                    isTopThree ? 'bg-[#1e40af]/5' : ''
-                  }`}
-                >
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <div className="flex items-center gap-2 shrink-0">
-                      {getRankIcon(player.rank)}
-                      <span className="font-bold text-[#1e293b] w-6 text-right tabular-nums">{player.rank}</span>
-                    </div>
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className={`w-10 h-10 shrink-0 flex items-center justify-center font-bold text-sm rounded-lg border-2 ${
-                        isTopThree ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-[#f1f5f9] text-[#475569] border-[#e2e8f0]'
-                      }`}>
-                        {player.name.charAt(0).toUpperCase()}
+            <ul className="divide-y divide-[#e2e8f0]">
+              {rankings.map((player) => {
+                const value = player.metrics[currentMetric.key] || 0;
+                const isTopThree = player.rank <= 3;
+                const maxValue = Math.max(...rankings.map((p) => p.metrics[currentMetric.key] || 0));
+                const percentage = maxValue > 0 ? (value / maxValue) * 100 : 0;
+                const isAboveAvg = stats && value > stats.avgValue;
+                const sessions = player.metrics.sessions ?? 0;
+
+                return (
+                  <li key={player.name}>
+                    {/* Desktop / tablet row */}
+                    <div
+                      className={`hidden sm:grid gap-3 items-center px-4 sm:px-6 py-3 transition-colors hover:bg-[#f8fafc] ${
+                        isTopThree ? 'bg-[#1e40af]/[0.06]' : ''
+                      }`}
+                      style={{
+                        gridTemplateColumns: '2.75rem 2.75rem minmax(0,1fr) 5.5rem minmax(4rem,1fr) 4.25rem 5.5rem',
+                      }}
+                    >
+                      <div className="flex justify-center">{getRankIcon(player.rank)}</div>
+                      <span className="text-right text-sm font-bold tabular-nums text-[#1e293b]">{player.rank}</span>
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div
+                          className={`w-9 h-9 shrink-0 flex items-center justify-center font-bold text-xs rounded-lg border ${
+                            isTopThree
+                              ? 'bg-amber-50 text-amber-800 border-amber-200'
+                              : 'bg-[#f1f5f9] text-[#475569] border-[#e2e8f0]'
+                          }`}
+                        >
+                          {player.name.charAt(0).toUpperCase()}
+                        </div>
+                        <span className="font-semibold text-[#0f172a] truncate text-sm">{player.name}</span>
                       </div>
-                      <span className="font-semibold text-[#1e293b] truncate">{player.name}</span>
+                      <div className="text-right">
+                        <div className="inline-flex flex-col items-end leading-tight">
+                          <span className="text-base font-bold tabular-nums text-[#0f172a]">{formatValue(value)}</span>
+                          {currentMetric.unit ? (
+                            <span className="text-[10px] font-medium uppercase tracking-wide text-[#64748b]">
+                              {currentMetric.unit}
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="pl-1 pr-1 min-w-0">
+                        <div className="h-2 bg-[#e2e8f0] rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all duration-300"
+                            style={{ width: `${percentage}%`, backgroundColor: currentMetric.color }}
+                            title={`${Math.round(percentage)}% of team high`}
+                          />
+                        </div>
+                      </div>
+                      <span className="text-right text-sm tabular-nums text-[#475569]">{sessions}</span>
+                      {stats ? (
+                        <div className="flex justify-center">
+                          <span
+                            className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                              isAboveAvg
+                                ? 'bg-[#1e40af]/10 text-[#1e40af]'
+                                : 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            {isAboveAvg ? (
+                              <TrendingUp className="w-3 h-3 shrink-0" strokeWidth={2.5} />
+                            ) : (
+                              <TrendingDown className="w-3 h-3 shrink-0" strokeWidth={2.5} />
+                            )}
+                            {isAboveAvg ? 'Above' : 'Below'}
+                          </span>
+                        </div>
+                      ) : (
+                        <span />
+                      )}
                     </div>
-                  </div>
-                  <div className="flex items-center gap-4 shrink-0">
-                    <div className="text-right">
-                    <span className="text-base font-bold text-[#1e293b]">{formatValue(value)}</span>
-                      {currentMetric.unit && <span className="text-xs text-[#64748b] ml-1">{currentMetric.unit}</span>}
+
+                    {/* Mobile card */}
+                    <div
+                      className={`sm:hidden px-4 py-3.5 space-y-3 ${
+                        isTopThree ? 'bg-[#1e40af]/[0.06]' : 'bg-white'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div className="flex flex-col items-center gap-0.5 shrink-0 w-8">
+                            {getRankIcon(player.rank)}
+                            <span className="text-xs font-bold tabular-nums text-[#64748b]">{player.rank}</span>
+                          </div>
+                          <div
+                            className={`w-10 h-10 shrink-0 flex items-center justify-center font-bold text-sm rounded-lg border ${
+                              isTopThree
+                                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                : 'bg-[#f1f5f9] text-[#475569] border-[#e2e8f0]'
+                            }`}
+                          >
+                            {player.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-[#0f172a] text-sm leading-snug break-words">{player.name}</p>
+                            <p className="text-xs text-[#64748b] mt-0.5">{sessions} sessions</p>
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="text-lg font-bold tabular-nums text-[#0f172a] leading-none">{formatValue(value)}</p>
+                          {currentMetric.unit ? (
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-[#64748b] mt-1">
+                              {currentMetric.unit}
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1 h-2 bg-[#e2e8f0] rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full"
+                            style={{ width: `${percentage}%`, backgroundColor: currentMetric.color }}
+                          />
+                        </div>
+                        {stats ? (
+                          <span
+                            className={`shrink-0 inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                              isAboveAvg
+                                ? 'bg-[#1e40af]/10 text-[#1e40af]'
+                                : 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            {isAboveAvg ? <TrendingUp className="w-3 h-3" strokeWidth={2.5} /> : <TrendingDown className="w-3 h-3" strokeWidth={2.5} />}
+                            {isAboveAvg ? 'Above' : 'Below'}
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
-                    <div className="w-24 sm:w-32 h-2 bg-[#e2e8f0] rounded-full overflow-hidden shrink-0">
-                      <div
-                        className="h-full rounded-full transition-all"
-                        style={{ width: `${percentage}%`, backgroundColor: currentMetric.color }}
-                      />
-                    </div>
-                    <span className="text-sm text-[#64748b] w-12 text-right">{player.metrics.sessions ?? 0} sess.</span>
-                    {stats && (
-                      <span className={`inline-flex items-center gap-1 text-xs font-medium w-14 ${isAboveAvg ? 'text-[#1e40af]' : 'text-[#64748b]'}`}>
-                        {isAboveAvg ? <TrendingUp className="w-3.5 h-3.5" strokeWidth={2.5} /> : <TrendingDown className="w-3.5 h-3.5" strokeWidth={2.5} />}
-                        {isAboveAvg ? 'Above' : 'Below'}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+                  </li>
+                );
+              })}
+            </ul>
           </div>
         )}
       </div>

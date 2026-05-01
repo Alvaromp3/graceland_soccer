@@ -1,6 +1,8 @@
 from fastapi import APIRouter, HTTPException
 import asyncio
+import logging
 import os
+import tempfile
 import time
 import hashlib
 import json
@@ -13,9 +15,36 @@ from ..services.openrouter_service import openrouter_service
 
 router = APIRouter(prefix="/analysis", tags=["Analysis"])
 
+logger = logging.getLogger(__name__)
+
 _AI_REC_CACHE_TTL_S = int(os.environ.get("AI_RECOMMENDATIONS_CACHE_TTL_S", "900"))
-_AI_REC_CACHE_DIR = Path(DATA_STORE_DIR) / "ai_cache"
-_AI_REC_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+_ai_rec_cache_dir_resolved: Path | None = None
+
+
+def _ai_rec_cache_dir() -> Path:
+    """
+    Resolve AI recommendation cache directory lazily.
+    Import-time mkdir could crash the whole app on Render if DATA_STORE_DIR is misconfigured
+    (e.g. disk path without a mounted disk).
+    """
+    global _ai_rec_cache_dir_resolved
+    if _ai_rec_cache_dir_resolved is not None:
+        return _ai_rec_cache_dir_resolved
+    primary = Path(DATA_STORE_DIR) / "ai_cache"
+    try:
+        primary.mkdir(parents=True, exist_ok=True)
+        _ai_rec_cache_dir_resolved = primary
+        return primary
+    except OSError as exc:
+        fallback = Path(tempfile.gettempdir()) / "graceland_ai_cache"
+        try:
+            fallback.mkdir(parents=True, exist_ok=True)
+        except OSError as exc2:
+            logger.error("Could not create AI cache dir at %s or %s: %s; %s", primary, fallback, exc, exc2)
+            raise
+        logger.warning("AI cache primary dir unusable (%s), using fallback %s", exc, fallback)
+        _ai_rec_cache_dir_resolved = fallback
+        return fallback
 
 
 def _build_ai_cache_key(player_id: str, player: dict) -> str:
@@ -443,8 +472,9 @@ async def get_openrouter_status():
         status = openrouter_service.get_status()
         status["aiRecommendationsCacheTtlSeconds"] = _AI_REC_CACHE_TTL_S
         try:
-            status["aiRecommendationsCacheEntries"] = len(list(_AI_REC_CACHE_DIR.glob("*.json")))
-            status["aiRecommendationsCacheDir"] = str(_AI_REC_CACHE_DIR)
+            d = _ai_rec_cache_dir()
+            status["aiRecommendationsCacheEntries"] = len(list(d.glob("*.json")))
+            status["aiRecommendationsCacheDir"] = str(d)
         except Exception:
             status["aiRecommendationsCacheEntries"] = None
         return ApiResponse(success=True, data=status)
@@ -493,7 +523,7 @@ async def get_ai_recommendations(request: PredictRiskRequest):
         
         # Fast path: disk cache lookup BEFORE heavy computations (risk + analytics + LLM).
         cache_key = _build_ai_cache_key(request.playerId, player)
-        cache_fp = _AI_REC_CACHE_DIR / f"{cache_key}.json"
+        cache_fp = _ai_rec_cache_dir() / f"{cache_key}.json"
         try:
             if cache_fp.exists():
                 age_s = time.time() - cache_fp.stat().st_mtime

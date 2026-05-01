@@ -34,6 +34,8 @@ services:
         sync: false
       - key: API_KEY
         sync: false
+      # Optional. Leave unset to use backend/data_store on the instance disk.
+      # If set to a path without a Render Disk mounted there, startup could fail before these code fixes.
       - key: DATA_STORE_DIR
         sync: false
 
