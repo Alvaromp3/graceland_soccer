@@ -17,7 +17,7 @@ const queryClient = new QueryClient({
     queries: {
       refetchOnWindowFocus: false,
       retry: 1,
-      staleTime: 30000,
+      staleTime: 60_000,
       // Do not keep "loading" forever on slow networks; refetch can be manual via navigation.
       gcTime: 5 * 60 * 1000,
     },

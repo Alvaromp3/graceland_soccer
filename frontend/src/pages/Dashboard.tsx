@@ -43,7 +43,12 @@ export default function Dashboard() {
   const uploadMutation = useMutation({
     mutationFn: (file: File) => dataApi.upload(file, currentTeam),
     onSuccess: (data) => {
-      queryClient.invalidateQueries();
+      // Targeted invalidation — avoid refetching every route/query at once (slow on Render free tier).
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      void queryClient.invalidateQueries({ queryKey: ['players'] });
+      void queryClient.invalidateQueries({ queryKey: ['data', 'status'] });
+      void queryClient.invalidateQueries({ queryKey: ['teamStatus'] });
+      void queryClient.invalidateQueries({ queryKey: ['analysis'] });
       setUploadStatus({
         success: true,
         message: `CSV loaded: ${data.rowCount} rows, ${data.players.length} players`,

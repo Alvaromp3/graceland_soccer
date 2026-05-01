@@ -22,7 +22,7 @@ OPENROUTER_PROFILE = os.environ.get("OPEN_ROUTER_PROFILE", "cheap").strip().lowe
 _PROFILE_DEFAULTS = {
     "cheap": {
         "model": "google/gemini-2.5-flash-lite:nitro",
-        "max_tokens": 160,
+        "max_tokens": 280,
         "include_analytics": False,
     },
     "balanced": {
@@ -249,7 +249,7 @@ class OpenRouterService:
         is_team_agg = player_data.get("id") == "team_average"
 
         cache_key_payload = {
-            "prompt_version": "v2-budget-structure",
+            "prompt_version": "v3-coach-pro",
             "model": self.model,
             "max_tokens": self.effective_max_tokens(),
             "player_name": player_name,
@@ -266,9 +266,14 @@ class OpenRouterService:
             return out
 
         system_prompt = (
-            "You are an elite professional soccer coach and sports scientist writing for a head coach. "
-            "Use professional terminology, be specific, and ground recommendations in the provided data. "
-            "Prefer concise, actionable bullets over long narrative."
+            "You are a UEFA-level head coach and accredited performance director writing for another head coach "
+            "and technical staff. Tone: decisive, professional, no fluff. Ground every claim in the supplied metrics; "
+            "when data is thin, say what is missing and what to measure next. "
+            "Prioritize: (1) injury risk & tissue tolerance vs load, (2) sprint / high-speed exposure and recovery, "
+            "(3) ACWR / rolling load interpretation when provided, (4) session design (objectives, volume caps, "
+            "intensity distribution), (5) return-to-play / taper judgment only when risk is elevated, "
+            "(6) communication hooks with medical/S&C (red flags, RTP criteria). "
+            "Avoid generic wellness advice; each bullet must tie to a metric, trend, or clear decision."
         )
         squad_vs_individual = (
             "This selection is TEAM AVERAGE (aggregate). Emphasize squad load management, rotation, positional groups, "
@@ -284,33 +289,38 @@ class OpenRouterService:
 
         if self.budget_mode:
             user_prompt = (
-                "COACHING REPORT (professional; moderate length)\n\n"
+                "COACHING REPORT — staff-facing (high signal)\n\n"
                 f"{context}\n\n"
                 f"{squad_vs_individual}"
-                "Write a tight professional report.\n"
-                "- Target ~380–520 words total. Use bullets and short paragraphs.\n"
-                "- Do NOT invent metrics; if unknown, say so briefly.\n\n"
-                "## EXECUTIVE SUMMARY (3-5 bullets)\n"
-                "## KEY METRICS SNAPSHOT (6-10 bullets; use what is available)\n"
-                "## TOP RISK DRIVERS (5-7 bullets)\n"
-                "## NEXT 72 HOURS PLAN (6-9 bullets; session design + minutes/intensity guidance)\n"
-                "## RECOVERY & MONITORING (6-10 bullets incl. red flags + what-to-do)\n"
+                "Write for a coach who will act on this today.\n"
+                "- Target ~480–700 words. Short paragraphs + bullets; every section must reference concrete numbers from context.\n"
+                "- If ACWR / rolling load / outliers appear in context, interpret them (what they imply for the next micro-cycle).\n"
+                "- Do NOT invent metrics; if a field is missing, one line: what to log next session.\n\n"
+                "## EXECUTIVE SUMMARY (4-6 bullets: readiness, main constraint, decision)\n"
+                "## LOAD & SPEED PROFILE (6-10 bullets: distribution of stress, sprint exposure, work ratio meaning)\n"
+                "## INJURY / FATIGUE RISK (6-10 bullets: mechanisms tied to listed risk factors; be explicit)\n"
+                "## TRAINING PLAN — NEXT 3–5 DAYS (8-12 bullets: session types, volume caps, intensity targets, "
+                "minutes guidance for starters vs rotation; flag congested-fixture adjustments if implied by data)\n"
+                "## RECOVERY, MONITORING & FLAGS (6-10 bullets: subjective markers, objective re-checks, "
+                "when to pull load vs when to hold steady; one clear escalation trigger)\n"
+                "## STAFF COORDINATION (4-6 bullets: who does what — coach / medical / S&C; what to brief the player)\n"
             )
         else:
             user_prompt = (
-                "COACHING REPORT REQUEST\n\n"
+                "COACHING REPORT REQUEST — elite staff depth\n\n"
                 f"{context}\n\n"
                 f"{squad_vs_individual}"
                 "Write a professional coaching report.\n"
-                "- Keep it detailed but bounded: target 650–950 words.\n"
-                "- Use bullets and concrete numbers (intensity %, volume, frequency, rest).\n"
-                "- Do NOT invent missing metrics; if a metric is missing, note it and propose how to capture it.\n\n"
+                "- Target 750–1100 words. Bullets + tight prose; tie recommendations to metrics and to positional demands.\n"
+                "- Interpret trends (rolling load, ACWR, outliers) when present; state uncertainty when absent.\n"
+                "- Do NOT invent missing metrics; propose one concrete data-capture fix per gap.\n\n"
                 "Sections:\n"
-                "## EXECUTIVE SUMMARY (3-4 sentences)\n"
-                "## KEY METRICS SNAPSHOT (8-12 bullets)\n"
-                "## RISK DRIVERS (8-12 bullets referencing metrics/trends)\n"
-                "## 7-DAY MICRO-CYCLE (Day 1..Day 7 bullets; include session focus + intensity)\n"
-                "## RECOVERY & MONITORING (10-14 bullets incl. red flags)\n"
+                "## EXECUTIVE SUMMARY (4-6 sentences: game model link + risk + plan)\n"
+                "## PERFORMANCE & LOAD SIGNATURE (10-14 bullets)\n"
+                "## RISK & MECHANISTIC DRIVERS (10-14 bullets; cite numbers)\n"
+                "## 7-DAY MICRO-CYCLE (Day-by-day bullets: objective, volume, intensity, speed exposure, set-pieces load)\n"
+                "## RECOVERY, MONITORING & RTP GUARDRAILS (12-16 bullets; red flags + downgrade/upgrade rules)\n"
+                "## STAFF & PLAYER BRIEF (6-8 bullets: who to align with, what to tell the athlete)\n"
             )
 
         payload: Dict[str, Any] = {

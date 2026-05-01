@@ -2,18 +2,31 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
-import { TeamContext, fetchWithTimeout } from './teamContext';
+import { TeamContext, fetchWithTimeout, RESOLVED_API_ORIGIN } from './teamContext';
 import type { TeamType } from './teamContext';
 
 export function TeamProvider({ children }: { children: ReactNode }) {
   const [currentTeam, setCurrentTeam] = useState<TeamType>('mens');
   const queryClient = useQueryClient();
 
+  useEffect(() => {
+    if (!RESOLVED_API_ORIGIN) return;
+    const id = 'graceland-preconnect-api';
+    if (document.getElementById(id)) return;
+    const link = document.createElement('link');
+    link.id = id;
+    link.rel = 'preconnect';
+    link.href = RESOLVED_API_ORIGIN;
+    link.crossOrigin = 'anonymous';
+    document.head.appendChild(link);
+  }, []);
+
   const { data: teamStatus, isLoading } = useQuery({
     queryKey: ['teamStatus'],
     queryFn: async () => {
       try {
-        const response = await fetchWithTimeout('/api/settings/team-status', 12000);
+        // Render cold starts can exceed 12s; avoid AbortError spam and false "empty" team state.
+        const response = await fetchWithTimeout('/api/settings/team-status', 28_000);
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -23,7 +36,13 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         }
         return data.data;
       } catch (error) {
-        console.error('Error fetching team status:', error);
+        const aborted =
+          error instanceof DOMException
+            ? error.name === 'AbortError'
+            : error instanceof Error && error.name === 'AbortError';
+        if (!aborted) {
+          console.error('Error fetching team status:', error);
+        }
         // Return default structure on error
         return {
           currentTeam: 'mens',
@@ -43,7 +62,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const switchTeamMutation = useMutation({
     mutationFn: async (team: TeamType) => {
-      const response = await fetchWithTimeout('/api/settings/switch-team', 15000, {
+      const response = await fetchWithTimeout('/api/settings/switch-team', 28_000, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ team }),
