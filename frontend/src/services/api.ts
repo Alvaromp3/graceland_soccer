@@ -309,6 +309,8 @@ export const dataApi = {
         },
         maxContentLength: Infinity,
         maxBodyLength: Infinity,
+        // Upload + pandas parse on a cold Render instance can exceed the default 45s axios timeout.
+        timeout: 180000,
       });
       return data.data!;
     } catch (err: unknown) {
@@ -325,7 +327,9 @@ export const dataApi = {
   },
 
   loadSample: async (): Promise<UploadResult> => {
-    const { data } = await api.post<ApiResponse<UploadResult>>('/data/load-sample');
+    const { data } = await api.post<ApiResponse<UploadResult>>('/data/load-sample', undefined, {
+      timeout: 180000,
+    });
     return data.data!;
   },
 
