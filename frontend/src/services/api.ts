@@ -155,11 +155,19 @@ api.interceptors.response.use(
         : '';
       throw new Error(`${raw || 'Request failed'}.${hint}`.trim());
     }
+    const status = ax.response.status;
+    // Render/nginx 502/503 often have no CORS headers — the browser blames "CORS" but the root issue is upstream.
+    if (status === 502 || status === 503 || status === 504) {
+      throw new Error(
+        `Server returned HTTP ${status} (gateway / service unavailable). ` +
+          'On Render: open the **backend** service → **Logs** — the Python app likely crashed, ran out of memory, or is still starting. ' +
+          'This is not a frontend CORS configuration bug.',
+      );
+    }
     const body = ax.response.data as { detail?: unknown; message?: unknown } | undefined;
     const fromDetail = formatFastApiDetail(body?.detail);
     const fromMessage = typeof body?.message === 'string' ? body.message : '';
     const base = fromDetail || fromMessage || ax.message || 'Request failed';
-    const status = ax.response.status;
     const cleaned = String(base).replace(/\s+/g, ' ').trim().slice(0, 400);
     throw new Error(status ? `${cleaned} (HTTP ${status})` : cleaned);
   },

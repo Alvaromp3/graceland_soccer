@@ -105,7 +105,22 @@ class DataService:
             self._reset_store_files()
 
         if persist_data and not reset_on_start:
-            self._load_persisted_state()
+            try:
+                self._load_persisted_state()
+            except MemoryError:
+                logger.exception(
+                    "Out of memory loading persisted CSV/state at startup — continuing empty. "
+                    "Typical on Render free tier: shrink CSVs, clear the data disk, set PERSIST_DATA=0, or upgrade RAM."
+                )
+                self._clear_loaded_workspace_after_oom()
+
+    def _clear_loaded_workspace_after_oom(self) -> None:
+        """Reset in-memory workspace after OOM so the API process can still serve /health and uploads."""
+        self.df = None
+        self.df_original = None
+        self.players = []
+        self.columns = []
+        self.team_data = {"mens": None, "womens": None}
 
     def _ensure_store(self) -> None:
         DATA_STORE_DIR.mkdir(parents=True, exist_ok=True)
@@ -151,8 +166,14 @@ class DataService:
         for team, file_path in TEAM_FILES.items():
             if file_path.exists():
                 try:
-                    team_df = pd.read_csv(file_path)
-                    self.team_data[team] = team_df
+                    self.team_data[team] = pd.read_csv(file_path)
+                except MemoryError:
+                    logger.exception(
+                        "OOM reading persisted CSV for team=%s path=%s — skipping file",
+                        team,
+                        file_path,
+                    )
+                    self.team_data[team] = None
                 except Exception as exc:
                     logger.warning(f"Could not load persisted dataset for {team}: {exc}")
 
@@ -170,10 +191,19 @@ class DataService:
 
         active_df = self.team_data.get(self.current_team)
         if active_df is not None:
-            self.df = active_df.copy()
-            self.df_original = active_df.copy()
+            try:
+                self.df = active_df.copy()
+                self.df_original = active_df.copy()
+            except MemoryError:
+                logger.exception("OOM copying persisted active team dataframe — skipping in-memory load")
+                self.df = None
+                self.df_original = None
+                return
             try:
                 self._process_loaded_data()
+            except MemoryError:
+                logger.exception("OOM processing persisted active team data — clearing workspace")
+                self._clear_loaded_workspace_after_oom()
             except Exception as exc:
                 logger.warning(f"Could not process persisted active team data: {exc}")
 

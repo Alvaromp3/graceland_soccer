@@ -27,6 +27,10 @@ After changing frontend env vars, **trigger a new deploy** so Vite rebuilds with
 
 On Render, the API defaults to **`Access-Control-Allow-Origin: *`** (no cookies; `CORS_WILDCARD` unset) so the static site can always call the API. Set `CORS_WILDCARD=0` to use `ALLOWED_ORIGINS` + `*.onrender.com` regex instead. If `DATA_STORE_DIR` is unmounted/unwritable, the app falls back to a writable path so health checks still pass.
 
+### If the browser shows “CORS” but Network says **502 Bad Gateway**
+
+The backend process is not returning a normal response (crash, OOM, or still deploying). Open **backend → Logs / Events** on Render — do not chase CORS on the frontend. On the free tier, loading very large persisted CSVs at startup can run out of memory; use smaller files, `PERSIST_DATA=0`, or clear the disk.
+
 ## Data persistence
 
 Web instances often have an **ephemeral filesystem**. For uploads to survive restarts, attach a **Disk** to the backend service, mount it (e.g. `/var/data`), and set `DATA_STORE_DIR` to that path.
