@@ -1,12 +1,14 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from typing import Optional
-from ..models.schemas import ApiResponse
-from ..services.data_service import data_service
-from ..middleware_config import is_destructive_data_disabled
+import asyncio
 import os
 import pandas as pd
 import logging
+
+from ..models.schemas import ApiResponse
+from ..services.data_service import data_service
+from ..middleware_config import is_destructive_data_disabled
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +57,8 @@ async def upload_data(file: UploadFile = File(...), team: str = 'mens'):
             )
         
         logger.info(f"CSV size: {len(content)} bytes, processing...")
-        result = data_service.load_from_upload(content, team)
+        # Run pandas parse off the event loop so Render / uvicorn stays responsive (health checks, CORS).
+        result = await asyncio.to_thread(data_service.load_from_upload, content, team)
         logger.info(f"Upload success: {result.get('rowCount', 0)} rows, {len(result.get('players', []))} players")
         return ApiResponse(success=True, data=result)
     except HTTPException:
@@ -85,7 +88,7 @@ async def load_sample_data():
         if not os.path.exists(SAMPLE_DATA_PATH):
             raise HTTPException(status_code=404, detail=f"Sample data file not found")
         
-        result = data_service.load_csv(SAMPLE_DATA_PATH)
+        result = await asyncio.to_thread(data_service.load_csv, SAMPLE_DATA_PATH)
         return ApiResponse(success=True, data=result)
     except HTTPException:
         raise

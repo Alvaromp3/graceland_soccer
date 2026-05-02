@@ -122,11 +122,11 @@ const API_BASE = API_BASE_URL ? `${API_BASE_URL}/api` : '/api';
 const api = axios.create({
   baseURL: API_BASE,
   // Keep bounded so a dead/slow backend does not block the whole UI for minutes.
-  // Long operations (coach report) override per-request.
+  // Long operations (upload, coach report) override per-request.
   timeout: 45000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  // Do not set Content-Type globally — it breaks multipart uploads (FormData needs
+  // multipart boundary). Axios sets application/json automatically for plain object bodies.
+  headers: {},
 });
 
 const viteApiKey =
@@ -345,13 +345,10 @@ export const dataApi = {
     formData.append('file', file);
     try {
       const { data } = await api.post<ApiResponse<UploadResult>>(`/data/upload?team=${team}`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
         maxContentLength: Infinity,
         maxBodyLength: Infinity,
-        // Upload + pandas parse on a cold Render instance can exceed the default 45s axios timeout.
-        timeout: 180000,
+        // Upload + pandas parse on a cold Render instance can take several minutes.
+        timeout: 300000,
       });
       return data.data!;
     } catch (err: unknown) {
