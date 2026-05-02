@@ -85,6 +85,36 @@ function sanitizeApiBaseUrl(raw: unknown): string | null {
   }
 }
 
+/** FastAPI/Pydantic often returns `detail` as string, array of strings, or validation objects. */
+function formatFastApiDetail(detail: unknown): string {
+  if (detail == null) return '';
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    const parts = detail.map((item) => {
+      if (typeof item === 'string') return item;
+      if (item && typeof item === 'object') {
+        const o = item as { msg?: unknown; type?: unknown; loc?: unknown };
+        if (typeof o.msg === 'string') {
+          const loc = Array.isArray(o.loc) ? o.loc.filter(Boolean).join('.') : '';
+          return loc ? `${loc}: ${o.msg}` : o.msg;
+        }
+      }
+      try {
+        return JSON.stringify(item);
+      } catch {
+        return String(item);
+      }
+    });
+    return parts.filter(Boolean).join('; ');
+  }
+  if (typeof detail === 'object') {
+    const o = detail as { msg?: unknown; message?: unknown };
+    if (typeof o.msg === 'string') return o.msg;
+    if (typeof o.message === 'string') return o.message;
+  }
+  return String(detail);
+}
+
 /** Production: set to backend origin only, e.g. https://graceland-backend.onrender.com (no trailing slash). */
 const API_BASE_URL = sanitizeApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
 const API_BASE = API_BASE_URL ? `${API_BASE_URL}/api` : '/api';
@@ -109,18 +139,29 @@ if (viteApiKey) {
 api.interceptors.response.use(
   (r) => r,
   (err: unknown) => {
-    const ax = err as { response?: { data?: unknown; status?: number }; message?: string };
-    const detail = (ax.response?.data as { detail?: unknown } | undefined)?.detail;
-    const msg =
-      Array.isArray(detail)
-        ? String(detail[0] ?? 'Request failed')
-        : typeof detail === 'string'
-          ? detail
-          : ax.message || 'Request failed';
-    const status = ax.response?.status;
-    const cleaned = String(msg).replace(/\s+/g, ' ').trim().slice(0, 280);
-    const e = new Error(status ? `${cleaned} (HTTP ${status})` : cleaned);
-    throw e;
+    const ax = err as {
+      response?: { data?: unknown; status?: number };
+      message?: string;
+      code?: string;
+    };
+    if (!ax.response) {
+      const raw = (ax.message || '').trim();
+      const isNetwork =
+        raw === 'Network Error' ||
+        ax.code === 'ERR_NETWORK' ||
+        /^network\b/i.test(raw);
+      const hint = isNetwork
+        ? ' Cannot reach the API (offline, blocked request, or misconfigured VITE_API_BASE_URL / CORS).'
+        : '';
+      throw new Error(`${raw || 'Request failed'}.${hint}`.trim());
+    }
+    const body = ax.response.data as { detail?: unknown; message?: unknown } | undefined;
+    const fromDetail = formatFastApiDetail(body?.detail);
+    const fromMessage = typeof body?.message === 'string' ? body.message : '';
+    const base = fromDetail || fromMessage || ax.message || 'Request failed';
+    const status = ax.response.status;
+    const cleaned = String(base).replace(/\s+/g, ' ').trim().slice(0, 400);
+    throw new Error(status ? `${cleaned} (HTTP ${status})` : cleaned);
   },
 );
 

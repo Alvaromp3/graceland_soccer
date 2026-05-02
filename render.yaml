@@ -2,7 +2,8 @@
 # New → Blueprint → connect this repo → Render reads render.yaml from the root.
 #
 # Set in the Render dashboard after first deploy:
-#   Backend:  ALLOWED_ORIGINS, OPEN_ROUTER_API_KEY, API_KEY (optional)
+#   Backend:  ALLOWED_ORIGINS (comma-separated; optional if ENVIRONMENT=production — then *.onrender.com is allowed)
+#             OPEN_ROUTER_API_KEY, API_KEY (optional). ALLOW_ORIGIN_REGEX=0 to disable default Render regex.
 #   Frontend: VITE_API_BASE_URL (rebuild static site after changing)
 
 services:

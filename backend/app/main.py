@@ -38,6 +38,7 @@ import time
 from .middleware_config import (
     get_allowed_origins,
     get_api_key,
+    get_cors_origin_regex,
     is_production_docs_disabled,
     paths_exempt_from_api_key,
 )
@@ -96,15 +97,19 @@ class RequestTimingMiddleware(BaseHTTPMiddleware):
 
 
 # CORS must be outermost (add last) so OPTIONS and error bodies still get CORS headers.
+_cors_params = {
+    "allow_origins": get_allowed_origins(),
+    "allow_credentials": True,
+    "allow_methods": ["*"],
+    "allow_headers": ["*"],
+}
+_cors_rx = get_cors_origin_regex()
+if _cors_rx:
+    _cors_params["allow_origin_regex"] = _cors_rx
+
 app.add_middleware(APIKeyMiddleware)
 app.add_middleware(RequestTimingMiddleware)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=get_allowed_origins(),
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app.add_middleware(CORSMiddleware, **_cors_params)
 
 app.include_router(dashboard.router, prefix="/api")
 app.include_router(players.router, prefix="/api")

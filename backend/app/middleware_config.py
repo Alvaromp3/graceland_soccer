@@ -2,7 +2,12 @@
 Production-oriented settings: CORS, optional API key gate.
 """
 import os
-from typing import List
+from typing import List, Optional
+
+
+def _is_production_env() -> bool:
+    v = (os.environ.get("ENVIRONMENT") or os.environ.get("ENV") or "").strip().lower()
+    return v in ("production", "prod")
 
 
 def get_allowed_origins() -> List[str]:
@@ -16,6 +21,26 @@ def get_allowed_origins() -> List[str]:
         "http://127.0.0.1:5173",
         "http://127.0.0.1:5174",
     ]
+
+
+def get_cors_origin_regex() -> Optional[str]:
+    """
+    When ENVIRONMENT=production, allow any Render HTTPS site by default so deploys work
+    even if ALLOWED_ORIGINS was never set in the dashboard (otherwise only localhost
+    is allowed and browsers see 'No Access-Control-Allow-Origin').
+
+    Override with ALLOW_ORIGIN_REGEX (full regex string), or set ALLOW_ORIGIN_REGEX=0
+    to disable and rely only on ALLOWED_ORIGINS.
+    """
+    override = (os.environ.get("ALLOW_ORIGIN_REGEX") or "").strip()
+    if override.lower() in ("0", "false", "no", "off", "none"):
+        return None
+    if override:
+        return override
+    if _is_production_env():
+        # Origin header is full URL, e.g. https://graceland-frontend.onrender.com
+        return r"https://[a-zA-Z0-9][a-zA-Z0-9\-.]*\.onrender\.com"
+    return None
 
 
 def get_api_key() -> str:
