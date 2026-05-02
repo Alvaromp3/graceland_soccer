@@ -99,7 +99,9 @@ class RequestTimingMiddleware(BaseHTTPMiddleware):
 # CORS must be outermost (add last) so OPTIONS and error bodies still get CORS headers.
 _cors_params = {
     "allow_origins": get_allowed_origins(),
-    "allow_credentials": True,
+    # API auth uses X-API-Key / Bearer headers, not cookies — False avoids brittle
+    # credential-preflight behavior with cross-origin static sites on Render.
+    "allow_credentials": False,
     "allow_methods": ["*"],
     "allow_headers": ["*"],
 }

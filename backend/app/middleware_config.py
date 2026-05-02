@@ -10,6 +10,11 @@ def _is_production_env() -> bool:
     return v in ("production", "prod")
 
 
+def _runs_on_render() -> bool:
+    """Render injects RENDER=true on web services (do not rely on ENVIRONMENT alone)."""
+    return (os.environ.get("RENDER") or "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def get_allowed_origins() -> List[str]:
     raw = (os.environ.get("ALLOWED_ORIGINS") or "").strip()
     if raw:
@@ -25,9 +30,8 @@ def get_allowed_origins() -> List[str]:
 
 def get_cors_origin_regex() -> Optional[str]:
     """
-    When ENVIRONMENT=production, allow any Render HTTPS site by default so deploys work
-    even if ALLOWED_ORIGINS was never set in the dashboard (otherwise only localhost
-    is allowed and browsers see 'No Access-Control-Allow-Origin').
+    On Render (RENDER=true) or when ENVIRONMENT=production, allow HTTPS *.onrender.com
+    so the static frontend can call the API even if ALLOWED_ORIGINS was never set.
 
     Override with ALLOW_ORIGIN_REGEX (full regex string), or set ALLOW_ORIGIN_REGEX=0
     to disable and rely only on ALLOWED_ORIGINS.
@@ -37,7 +41,7 @@ def get_cors_origin_regex() -> Optional[str]:
         return None
     if override:
         return override
-    if _is_production_env():
+    if _runs_on_render() or _is_production_env():
         # Origin header is full URL, e.g. https://graceland-frontend.onrender.com
         return r"https://[a-zA-Z0-9][a-zA-Z0-9\-.]*\.onrender\.com"
     return None

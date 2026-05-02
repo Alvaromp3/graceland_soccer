@@ -12,7 +12,7 @@
 
 | Service | Variable | Notes |
 |--------|----------|--------|
-| Backend | `ALLOWED_ORIGINS` | Optional. Comma-separated origins. If unset in dev, localhost is used. In `production`, HTTPS `*.onrender.com` is also allowed unless `ALLOW_ORIGIN_REGEX=0`. |
+| Backend | `ALLOWED_ORIGINS` | Optional. Comma-separated origins. If unset in dev, localhost is used. On Render (`RENDER=true`) or in `production`, HTTPS `*.onrender.com` is also allowed unless `ALLOW_ORIGIN_REGEX=0`. |
 | Backend | `DISABLE_MODEL_TRAINING` | `1` in production (already in `render.yaml`) |
 | Backend | `ENVIRONMENT` | `production` hides `/docs` |
 | Backend | `API_KEY` | Optional; if set, require `X-API-Key` or `Authorization: Bearer …` |
@@ -25,7 +25,7 @@ After changing frontend env vars, **trigger a new deploy** so Vite rebuilds with
 
 ## CORS
 
-Set `ALLOWED_ORIGINS` to your frontend origin(s) for clarity and tighter security. With `ENVIRONMENT=production`, the API also allows HTTPS origins matching `*.onrender.com` so a first deploy works even before `ALLOWED_ORIGINS` is configured.
+Set `ALLOWED_ORIGINS` to your frontend origin(s) for clarity and tighter security. The API also allows HTTPS `*.onrender.com` when Render sets `RENDER=true` (always on web services) or when `ENVIRONMENT=production`, unless `ALLOW_ORIGIN_REGEX=0`. If `DATA_STORE_DIR` points to an unmounted path, the app falls back to a writable directory so the service still starts and health checks pass.
 
 ## Data persistence
 

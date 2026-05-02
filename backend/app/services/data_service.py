@@ -6,18 +6,46 @@ import logging
 import json
 import re
 import os
+import tempfile
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 RECENT_DATA_DAYS = 45
 BACKEND_DIR = Path(__file__).resolve().parents[2]
-_data_store_override = (os.environ.get("DATA_STORE_DIR") or "").strip()
-DATA_STORE_DIR = Path(_data_store_override) if _data_store_override else (BACKEND_DIR / "data_store")
-STATE_FILE = DATA_STORE_DIR / 'state.json'
+
+
+def _pick_writable_data_store_dir() -> Path:
+    """
+    Prefer DATA_STORE_DIR / backend/data_store. If the configured path is not writable
+    (missing disk mount, read-only FS), fall back so the API still binds and /health passes.
+    """
+    override = (os.environ.get("DATA_STORE_DIR") or "").strip()
+    candidates: List[Path] = []
+    if override:
+        candidates.append(Path(override))
+    candidates.append(BACKEND_DIR / "data_store")
+    for p in candidates:
+        try:
+            p.mkdir(parents=True, exist_ok=True)
+            probe = p / ".graceland_write_probe"
+            probe.write_text("1", encoding="utf-8")
+            probe.unlink(missing_ok=True)
+            return p
+        except OSError as exc:
+            logger.warning("data store path not usable %s: %s", p, exc)
+            continue
+    fb = Path(tempfile.gettempdir()) / "graceland_data_store"
+    fb.mkdir(parents=True, exist_ok=True)
+    logger.warning("using ephemeral fallback data store at %s", fb)
+    return fb
+
+
+DATA_STORE_DIR = _pick_writable_data_store_dir()
+STATE_FILE = DATA_STORE_DIR / "state.json"
 TEAM_FILES = {
-    'mens': DATA_STORE_DIR / 'mens.csv',
-    'womens': DATA_STORE_DIR / 'womens.csv',
+    "mens": DATA_STORE_DIR / "mens.csv",
+    "womens": DATA_STORE_DIR / "womens.csv",
 }
 
 
