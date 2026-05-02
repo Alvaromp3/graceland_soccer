@@ -15,6 +15,17 @@ def _runs_on_render() -> bool:
     return (os.environ.get("RENDER") or "").strip().lower() in ("1", "true", "yes", "on")
 
 
+def should_use_cors_wildcard() -> bool:
+    """
+    Use Access-Control-Allow-Origin: * on Render / production (requires allow_credentials=False).
+    Fixes browsers that still omit ACAO when only regex/origin lists are used (e.g. edge proxies).
+    Set CORS_WILDCARD=0 to disable and use ALLOWED_ORIGINS + regex instead.
+    """
+    if (os.environ.get("CORS_WILDCARD") or "").strip().lower() in ("0", "false", "no", "off"):
+        return False
+    return _runs_on_render() or _is_production_env()
+
+
 def get_allowed_origins() -> List[str]:
     raw = (os.environ.get("ALLOWED_ORIGINS") or "").strip()
     if raw:

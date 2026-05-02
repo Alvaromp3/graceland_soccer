@@ -41,6 +41,7 @@ from .middleware_config import (
     get_cors_origin_regex,
     is_production_docs_disabled,
     paths_exempt_from_api_key,
+    should_use_cors_wildcard,
 )
 from .routers import dashboard, players, analysis, training, data, settings
 
@@ -97,17 +98,18 @@ class RequestTimingMiddleware(BaseHTTPMiddleware):
 
 
 # CORS must be outermost (add last) so OPTIONS and error bodies still get CORS headers.
+_cors_wildcard = should_use_cors_wildcard()
 _cors_params = {
-    "allow_origins": get_allowed_origins(),
-    # API auth uses X-API-Key / Bearer headers, not cookies — False avoids brittle
-    # credential-preflight behavior with cross-origin static sites on Render.
+    "allow_origins": ["*"] if _cors_wildcard else get_allowed_origins(),
+    # API auth uses X-API-Key / Bearer headers, not cookies — required for wildcard CORS.
     "allow_credentials": False,
     "allow_methods": ["*"],
     "allow_headers": ["*"],
 }
-_cors_rx = get_cors_origin_regex()
-if _cors_rx:
-    _cors_params["allow_origin_regex"] = _cors_rx
+if not _cors_wildcard:
+    _cors_rx = get_cors_origin_regex()
+    if _cors_rx:
+        _cors_params["allow_origin_regex"] = _cors_rx
 
 app.add_middleware(APIKeyMiddleware)
 app.add_middleware(RequestTimingMiddleware)

@@ -25,7 +25,7 @@ After changing frontend env vars, **trigger a new deploy** so Vite rebuilds with
 
 ## CORS
 
-Set `ALLOWED_ORIGINS` to your frontend origin(s) for clarity and tighter security. The API also allows HTTPS `*.onrender.com` when Render sets `RENDER=true` (always on web services) or when `ENVIRONMENT=production`, unless `ALLOW_ORIGIN_REGEX=0`. If `DATA_STORE_DIR` points to an unmounted path, the app falls back to a writable directory so the service still starts and health checks pass.
+On Render, the API defaults to **`Access-Control-Allow-Origin: *`** (no cookies; `CORS_WILDCARD` unset) so the static site can always call the API. Set `CORS_WILDCARD=0` to use `ALLOWED_ORIGINS` + `*.onrender.com` regex instead. If `DATA_STORE_DIR` is unmounted/unwritable, the app falls back to a writable path so health checks still pass.
 
 ## Data persistence
 

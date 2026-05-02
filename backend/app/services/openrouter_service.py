@@ -49,8 +49,9 @@ DEFAULT_MAX_TOKENS = int(
     )
 )
 # HTTP read timeout for OpenRouter (LLM latency). Default allows completion without Axios dying first.
-OPENROUTER_TIMEOUT_MAX_S = int(os.environ.get("OPEN_ROUTER_TIMEOUT_MAX_S", "90"))
-DEFAULT_TIMEOUT_S = int(os.environ.get("OPEN_ROUTER_TIMEOUT_S", str(min(75, OPENROUTER_TIMEOUT_MAX_S))))
+# Coach reports can exceed 90s on cold OpenRouter / large prompts; keep below typical client limits.
+OPENROUTER_TIMEOUT_MAX_S = int(os.environ.get("OPEN_ROUTER_TIMEOUT_MAX_S", "210"))
+DEFAULT_TIMEOUT_S = int(os.environ.get("OPEN_ROUTER_TIMEOUT_S", str(min(195, OPENROUTER_TIMEOUT_MAX_S))))
 DEFAULT_CACHE_TTL_S = int(os.environ.get("OPEN_ROUTER_CACHE_TTL_S", "900"))
 # Analytics (ACWR, rolling load) add input tokens but materially improve coach briefs.
 # Override with OPEN_ROUTER_INCLUDE_ANALYTICS=0 to disable.

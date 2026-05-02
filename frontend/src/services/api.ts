@@ -285,7 +285,7 @@ export const analysisApi = {
     const { data } = await api.post<ApiResponse<AIRecommendationBundle>>(
       '/analysis/ai-recommendations',
       { playerId },
-      { timeout: 120000 }
+      { timeout: 300000 }
     );
     return data.data!;
   },
