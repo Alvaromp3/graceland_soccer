@@ -25,6 +25,24 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     queryKey: ['teamStatus'],
     queryFn: async () => {
       try {
+        // If the backend just restarted, it may respond to /health before /api routes
+        // are mounted (we mount routers right after startup for Render's 5s probe).
+        // Wait briefly for readiness to avoid transient 404/failed fetch noise.
+        try {
+          const readyRes = await fetchWithTimeout('/ready', 6_000);
+          if (readyRes.ok) {
+            const readyJson = await readyRes.json().catch(() => null);
+            if (readyJson && typeof readyJson === 'object' && (readyJson as { ready?: unknown }).ready === false) {
+              return {
+                currentTeam: 'mens',
+                mens: { loaded: false, rowCount: 0 },
+                womens: { loaded: false, rowCount: 0 },
+              };
+            }
+          }
+        } catch {
+          // If /ready fails, fall through and attempt team-status normally.
+        }
         // Render cold starts can exceed 12s; avoid AbortError spam and false "empty" team state.
         const response = await fetchWithTimeout('/api/settings/team-status', 28_000);
         if (!response.ok) {

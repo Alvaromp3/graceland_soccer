@@ -46,11 +46,34 @@ from .middleware_config import (
     paths_exempt_from_api_key,
     should_use_cors_wildcard,
 )
-from .routers import dashboard, players, analysis, training, data, settings
 
 _show_docs = not is_production_docs_disabled()
 
 logger = logging.getLogger("app")
+
+_routers_mounted: bool = False
+
+
+def _mount_routers_once(app: FastAPI) -> None:
+    """
+    Import & mount routers lazily.
+
+    Render health checks time out after 5 seconds; importing heavy deps can exceed
+    that window on cold instances. Mount routers right after startup so `/health`
+    remains fast enough for the deploy probe.
+    """
+    global _routers_mounted
+    if _routers_mounted:
+        return
+    from .routers import dashboard, players, analysis, training, data, settings  # noqa: WPS433
+
+    app.include_router(dashboard.router, prefix="/api")
+    app.include_router(players.router, prefix="/api")
+    app.include_router(analysis.router, prefix="/api")
+    app.include_router(training.router, prefix="/api")
+    app.include_router(data.router, prefix="/api")
+    app.include_router(settings.router, prefix="/api")
+    _routers_mounted = True
 
 
 def _kickoff_persist_load() -> None:
@@ -70,11 +93,12 @@ def _kickoff_persist_load() -> None:
 async def lifespan(_: FastAPI):
     """
     Keep startup under Render's 5s health check timeout.
-    - Routers are mounted at import time (avoids heavy import spikes mid-flight).
+    - Mount routers right after startup (imports heavy deps).
     - Persisted CSV/state loads in background (pandas read).
     """
     async def _bg() -> None:
         try:
+            _mount_routers_once(app)
             await asyncio.to_thread(_kickoff_persist_load)
         except Exception:
             logger.exception("Background startup tasks failed")
@@ -152,13 +176,6 @@ app.add_middleware(CORSMiddleware, **_cors_params)
 # Outermost: explicit /api OPTIONS + ACAO patch (Starlette CORS skips entirely when Origin is absent).
 app.add_middleware(ApiCorsPatchMiddleware)
 
-app.include_router(dashboard.router, prefix="/api")
-app.include_router(players.router, prefix="/api")
-app.include_router(analysis.router, prefix="/api")
-app.include_router(training.router, prefix="/api")
-app.include_router(data.router, prefix="/api")
-app.include_router(settings.router, prefix="/api")
-
 
 @app.get("/")
 async def root():
@@ -174,6 +191,15 @@ async def root_head():
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
+
+@app.get("/ready")
+async def ready():
+    """
+    Readiness: true when /api routers are mounted.
+    Render health checks only hit /health (fast). The frontend can use /ready to
+    avoid calling /api/* during the brief post-boot window.
+    """
+    return {"ready": bool(_routers_mounted)}
 
 
 @app.head("/health")
