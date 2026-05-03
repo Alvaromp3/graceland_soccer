@@ -104,15 +104,23 @@ class DataService:
         if reset_on_start:
             self._reset_store_files()
 
-        if persist_data and not reset_on_start:
-            try:
-                self._load_persisted_state()
-            except MemoryError:
-                logger.exception(
-                    "Out of memory loading persisted CSV/state at startup — continuing empty. "
-                    "Typical on Render free tier: shrink CSVs, clear the data disk, set PERSIST_DATA=0, or upgrade RAM."
-                )
-                self._clear_loaded_workspace_after_oom()
+        # Persisted CSV/state load is deferred to FastAPI lifespan (background thread) so
+        # uvicorn can bind and /health responds within Render's 5s deploy health check.
+
+    def load_persisted_deferred_from_env(self) -> None:
+        """Run after ASGI startup (background). Re-reads env flags set at worker boot."""
+        reset_on_start = os.environ.get("RESET_DATA_ON_START", "1") == "1"
+        persist_data = os.environ.get("PERSIST_DATA", "0") == "1"
+        if not persist_data or reset_on_start:
+            return
+        try:
+            self._load_persisted_state()
+        except MemoryError:
+            logger.exception(
+                "Out of memory loading persisted CSV/state — continuing empty. "
+                "Typical on Render free tier: shrink CSVs, clear the data disk, set PERSIST_DATA=0, or upgrade RAM."
+            )
+            self._clear_loaded_workspace_after_oom()
 
     def _clear_loaded_workspace_after_oom(self) -> None:
         """Reset in-memory workspace after OOM so the API process can still serve /health and uploads."""

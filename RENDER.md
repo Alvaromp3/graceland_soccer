@@ -25,7 +25,11 @@ After changing frontend env vars, **trigger a new deploy** so Vite rebuilds with
 
 ## CORS
 
-On Render, the API defaults to **`Access-Control-Allow-Origin: *`** (no cookies; `CORS_WILDCARD` unset) so the static site can always call the API. Set `CORS_WILDCARD=0` to use `ALLOWED_ORIGINS` + `*.onrender.com` regex instead. If `DATA_STORE_DIR` is unmounted/unwritable, the app falls back to a writable path so health checks still pass.
+On Render, the API defaults to **`Access-Control-Allow-Origin: *`** (no cookies; `CORS_WILDCARD` unset) so the static site can always call the API. An extra `ApiCorsPatchMiddleware` answers **`OPTIONS /api/*`** with **204** and mirrors `Access-Control-Request-Headers` so preflight cannot 405 behind proxies. Set `CORS_WILDCARD=0` to use `ALLOWED_ORIGINS` + `*.onrender.com` regex instead. If `DATA_STORE_DIR` is unmounted/unwritable, the app falls back to a writable path so health checks still pass.
+
+### Deploy health check (5 second limit)
+
+Render’s HTTP health probe times out after **5 seconds**. Large persisted CSVs used to load during process import and could exceed that window. The API now **loads persisted data in a background thread right after startup**, so `/health` can answer immediately while CSVs load.
 
 ### If the browser shows “CORS” but Network says **502 Bad Gateway**
 

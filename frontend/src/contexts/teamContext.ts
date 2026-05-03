@@ -38,7 +38,13 @@ export async function fetchWithTimeout(url: string, ms: number, init?: RequestIn
       RESOLVED_API_ORIGIN && typeof url === 'string' && url.startsWith('/')
         ? `${RESOLVED_API_ORIGIN}${url}`
         : url;
-    return await fetch(finalUrl, { ...init, signal: ctrl.signal });
+    const res = await fetch(finalUrl, { ...init, signal: ctrl.signal });
+    if (res.status === 502 || res.status === 503 || res.status === 504) {
+      throw new Error(
+        `HTTP ${res.status}: backend unavailable on Render (check backend Logs/Events — not a CORS bug).`,
+      );
+    }
+    return res;
   } finally {
     window.clearTimeout(t);
   }

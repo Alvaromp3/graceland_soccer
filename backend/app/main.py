@@ -26,15 +26,18 @@ warnings.filterwarnings(
     category=UserWarning,
 )
 
+import asyncio
+import logging
+import time
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-import logging
-import time
-
+from .cors_middleware import ApiCorsPatchMiddleware
 from .middleware_config import (
     get_allowed_origins,
     get_api_key,
@@ -44,8 +47,28 @@ from .middleware_config import (
     should_use_cors_wildcard,
 )
 from .routers import dashboard, players, analysis, training, data, settings
+from .services.data_service import data_service
 
 _show_docs = not is_production_docs_disabled()
+
+logger = logging.getLogger("app")
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """
+    Load persisted CSV/state in the background so the process binds quickly.
+    Render's HTTP health check times out after 5s if the app import + startup blocks too long.
+    """
+    async def _persist_bg() -> None:
+        try:
+            await asyncio.to_thread(data_service.load_persisted_deferred_from_env)
+        except Exception:
+            logger.exception("Background persisted data load failed")
+
+    asyncio.create_task(_persist_bg())
+    yield
+
 
 app = FastAPI(
     title="Elite Sports Performance Analytics API",
@@ -54,9 +77,8 @@ app = FastAPI(
     docs_url="/docs" if _show_docs else None,
     redoc_url="/redoc" if _show_docs else None,
     openapi_url="/openapi.json" if _show_docs else None,
+    lifespan=lifespan,
 )
-
-logger = logging.getLogger("app")
 
 class APIKeyMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
@@ -114,6 +136,8 @@ if not _cors_wildcard:
 app.add_middleware(APIKeyMiddleware)
 app.add_middleware(RequestTimingMiddleware)
 app.add_middleware(CORSMiddleware, **_cors_params)
+# Outermost: explicit /api OPTIONS + ACAO patch (Starlette CORS skips entirely when Origin is absent).
+app.add_middleware(ApiCorsPatchMiddleware)
 
 app.include_router(dashboard.router, prefix="/api")
 app.include_router(players.router, prefix="/api")
