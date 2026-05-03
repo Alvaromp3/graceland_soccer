@@ -46,27 +46,62 @@ from .middleware_config import (
     paths_exempt_from_api_key,
     should_use_cors_wildcard,
 )
-from .routers import dashboard, players, analysis, training, data, settings
-from .services.data_service import data_service
+ 
 
 _show_docs = not is_production_docs_disabled()
 
 logger = logging.getLogger("app")
 
+_routers_mounted: bool = False
+
+
+def _mount_routers_once(app: FastAPI) -> None:
+    """
+    Import & mount routers lazily.
+
+    Render health checks time out after 5 seconds; importing pandas/sklearn during
+    module import can exceed that window on cold instances. We mount routers right
+    after startup in a background task so `/health` remains fast.
+    """
+    global _routers_mounted
+    if _routers_mounted:
+        return
+    from .routers import dashboard, players, analysis, training, data, settings  # noqa: WPS433
+
+    app.include_router(dashboard.router, prefix="/api")
+    app.include_router(players.router, prefix="/api")
+    app.include_router(analysis.router, prefix="/api")
+    app.include_router(training.router, prefix="/api")
+    app.include_router(data.router, prefix="/api")
+    app.include_router(settings.router, prefix="/api")
+    _routers_mounted = True
+
+
+def _kickoff_persist_load() -> None:
+    """Load persisted CSV/state lazily after startup (background thread)."""
+    try:
+        from .services.data_service import data_service  # noqa: WPS433
+
+        data_service.load_persisted_deferred_from_env()
+    except Exception:
+        logger.exception("Background persisted data load failed")
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     """
-    Load persisted CSV/state in the background so the process binds quickly.
-    Render's HTTP health check times out after 5s if the app import + startup blocks too long.
+    Keep startup under Render's 5s health check timeout.
+    - Mount routers in background (imports heavy deps).
+    - Load persisted CSV/state in background (pandas read).
     """
-    async def _persist_bg() -> None:
+    async def _bg() -> None:
         try:
-            await asyncio.to_thread(data_service.load_persisted_deferred_from_env)
+            _mount_routers_once(app)
+            await asyncio.to_thread(_kickoff_persist_load)
         except Exception:
-            logger.exception("Background persisted data load failed")
+            logger.exception("Background startup tasks failed")
 
-    asyncio.create_task(_persist_bg())
+    asyncio.create_task(_bg())
     yield
 
 
@@ -138,13 +173,6 @@ app.add_middleware(RequestTimingMiddleware)
 app.add_middleware(CORSMiddleware, **_cors_params)
 # Outermost: explicit /api OPTIONS + ACAO patch (Starlette CORS skips entirely when Origin is absent).
 app.add_middleware(ApiCorsPatchMiddleware)
-
-app.include_router(dashboard.router, prefix="/api")
-app.include_router(players.router, prefix="/api")
-app.include_router(analysis.router, prefix="/api")
-app.include_router(training.router, prefix="/api")
-app.include_router(data.router, prefix="/api")
-app.include_router(settings.router, prefix="/api")
 
 
 @app.get("/")

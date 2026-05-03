@@ -80,30 +80,48 @@ def _ensure_ml_imports() -> None:
         GradientBoostingClassifier = _GradientBoostingClassifier
         Pipeline = _Pipeline
 
-        try:
-            import xgboost  # noqa: F401
+        # IMPORTANT: Do NOT import optional booster libraries here.
+        # On small Render instances, importing xgboost/lightgbm/catboost can spike RAM
+        # and crash the worker during a request, surfacing as 502/503 from the proxy.
+        # Training is disabled in production; for local experimentation you can still
+        # enable these by setting ENABLE_BOOSTER_IMPORTS=1 and restarting.
+        enable_boosters = (os.environ.get("ENABLE_BOOSTER_IMPORTS") or "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        )
+        if enable_boosters:
+            try:
+                import xgboost  # noqa: F401
 
-            XGBOOST_AVAILABLE = True
-        except ImportError:
+                XGBOOST_AVAILABLE = True
+            except ImportError:
+                XGBOOST_AVAILABLE = False
+
+            try:
+                from lightgbm import LGBMClassifier as _LGBMClassifier, LGBMRegressor as _LGBMRegressor
+
+                LGBMClassifier = _LGBMClassifier
+                LGBMRegressor = _LGBMRegressor
+                LIGHTGBM_AVAILABLE = True
+            except ImportError:
+                LIGHTGBM_AVAILABLE = False
+                LGBMClassifier = None
+                LGBMRegressor = None
+
+            try:
+                import catboost  # noqa: F401
+
+                CATBOOST_AVAILABLE = True
+            except ImportError:
+                CATBOOST_AVAILABLE = False
+        else:
             XGBOOST_AVAILABLE = False
-
-        try:
-            from lightgbm import LGBMClassifier as _LGBMClassifier, LGBMRegressor as _LGBMRegressor
-
-            LGBMClassifier = _LGBMClassifier
-            LGBMRegressor = _LGBMRegressor
-            LIGHTGBM_AVAILABLE = True
-        except ImportError:
             LIGHTGBM_AVAILABLE = False
+            CATBOOST_AVAILABLE = False
             LGBMClassifier = None
             LGBMRegressor = None
-
-        try:
-            import catboost  # noqa: F401
-
-            CATBOOST_AVAILABLE = True
-        except ImportError:
-            CATBOOST_AVAILABLE = False
 
         _ml_imports_ready = True
 
