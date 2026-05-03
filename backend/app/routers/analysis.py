@@ -607,15 +607,49 @@ async def get_ai_recommendations(request: PredictRiskRequest):
 
         allow_ollama_fallback = os.environ.get("ALLOW_OLLAMA_FALLBACK", "0") == "1"
 
+        # IMPORTANT: On Render free-tier instances, long/rammy LLM calls can lead to the worker
+        # being restarted by the platform (surfacing as 502/503 in the browser). We enforce a
+        # total timeout for the LLM portion and fall back to rule-based text if exceeded.
+        total_llm_timeout_s = float(os.environ.get("AI_RECOMMENDATIONS_TIMEOUT_S", "55"))
+
+        async def _openrouter_call():
+            return await asyncio.to_thread(
+                openrouter_service.get_player_recommendations,
+                player['name'],
+                player,
+                risk_level,
+                risk_factors,
+                analytics_overview,
+            )
+
         # Get AI recommendations (prefer OpenRouter when configured)
-        result = await asyncio.to_thread(
-            openrouter_service.get_player_recommendations,
-            player['name'],
-            player,
-            risk_level,
-            risk_factors,
-            analytics_overview,
-        )
+        try:
+            result = await asyncio.wait_for(_openrouter_call(), timeout=total_llm_timeout_s)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "OpenRouter timed out after %.1fs for playerId=%s (falling back to standard report)",
+                total_llm_timeout_s,
+                request.playerId,
+            )
+            result = {
+                "success": False,
+                "error": f"AI generation timed out after {int(total_llm_timeout_s)}s",
+                "recommendations": "",
+                "source": "openrouter-timeout",
+            }
+        except Exception as exc:
+            logger.warning(
+                "OpenRouter call crashed for playerId=%s (falling back): %s",
+                request.playerId,
+                exc,
+            )
+            result = {
+                "success": False,
+                "error": f"AI generation failed: {str(exc)[:200]}",
+                "recommendations": "",
+                "source": "openrouter-error",
+            }
+
         if not result.get('success') and allow_ollama_fallback:
             fallback_result = await asyncio.to_thread(
                 ollama_service.get_player_recommendations,
