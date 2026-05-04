@@ -6,6 +6,7 @@ import tempfile
 import time
 import hashlib
 import json
+import uuid
 from pathlib import Path
 from ..models.schemas import ApiResponse, PredictLoadRequest, PredictRiskRequest, CompareRequest
 from ..services.ml_service import ml_service
@@ -19,6 +20,13 @@ logger = logging.getLogger(__name__)
 
 _AI_REC_CACHE_TTL_S = int(os.environ.get("AI_RECOMMENDATIONS_CACHE_TTL_S", "900"))
 _ai_rec_cache_dir_resolved: Path | None = None
+
+# --- Async coach-report jobs (in-process, no paid infra) ---
+# This avoids long request/response windows that can trigger 502/503 on small instances.
+_AI_JOB_TTL_S = int(os.environ.get("AI_RECOMMENDATIONS_JOB_TTL_S", "900"))
+_AI_JOB_POLL_MIN_S = float(os.environ.get("AI_RECOMMENDATIONS_JOB_POLL_MIN_S", "1.5"))
+_AI_JOBS: dict[str, dict] = {}
+_AI_JOBS_LOCK = asyncio.Lock()
 
 
 def _ai_rec_cache_dir() -> Path:
@@ -45,6 +53,293 @@ def _ai_rec_cache_dir() -> Path:
         logger.warning("AI cache primary dir unusable (%s), using fallback %s", exc, fallback)
         _ai_rec_cache_dir_resolved = fallback
         return fallback
+
+
+async def _cleanup_ai_jobs() -> None:
+    """Remove old jobs so memory doesn't grow unbounded."""
+    now = time.time()
+    async with _AI_JOBS_LOCK:
+        dead = [jid for jid, job in _AI_JOBS.items() if now - float(job.get("createdAt", now)) > _AI_JOB_TTL_S]
+        for jid in dead:
+            _AI_JOBS.pop(jid, None)
+
+
+async def _compute_coach_bundle(player_id: str) -> dict:
+    """
+    The same payload as POST /ai-recommendations returns today (coachBundleVersion=1),
+    but as a plain dict to be used by sync endpoint or async job worker.
+    """
+    # Reuse existing endpoint logic by calling the same internal steps.
+    # This is intentionally kept inside this module so it can access helpers/caches.
+    class _Req:
+        def __init__(self, pid: str):
+            self.playerId = pid
+
+    # Call the existing endpoint implementation body by factoring through the public function.
+    # We can't call the FastAPI endpoint directly (it returns ApiResponse); we want dict.
+    # So we duplicate minimal wrapper by copying the current logic below, but parameterized.
+    request = _Req(player_id)
+    # --- START: original body (trimmed: identical to get_ai_recommendations) ---
+    logger.info(f"Getting AI recommendations for player: {request.playerId}")
+
+    used_team_stub = False
+    if request.playerId == 'team_average':
+        player = data_service.get_team_average_metrics()
+        if not player:
+            used_team_stub = True
+            logger.info("Team average aggregate unavailable — using stub for coach bundle (same as /team-average)")
+            player = {
+                'id': 'team_average',
+                'name': 'Team Average',
+                'position': 'TEAM',
+                'number': 0,
+                'riskLevel': 'low',
+                'avgLoad': 0,
+                'avgSpeed': 0,
+                'sessions': 0,
+                'lastSession': None,
+                'hasRecentData': False,
+                'recentSessionCount': 0,
+                'metrics': {},
+                'extendedStats': {
+                    'playerLoad': {'avg': 0, 'std': 0, 'max': 0, 'min': 0},
+                },
+            }
+    else:
+        player = data_service.get_player_detail(request.playerId)
+        if not player:
+            logger.warning(f"Player not found: {request.playerId}")
+            raise HTTPException(status_code=404, detail="Player not found")
+
+    cache_key = _build_ai_cache_key(request.playerId, player)
+    cache_fp = _ai_rec_cache_dir() / f"{cache_key}.json"
+    try:
+        if cache_fp.exists():
+            age_s = time.time() - cache_fp.stat().st_mtime
+            if age_s < _AI_REC_CACHE_TTL_S:
+                cached_data = json.loads(cache_fp.read_text(encoding="utf-8"))
+                if cached_data.get("coachBundleVersion") == 1 and "probability" in cached_data:
+                    cached_data["aiSource"] = "openrouter-cache"
+                    return cached_data
+    except Exception:
+        pass
+
+    has_recent_data = player.get('hasRecentData', False)
+    recent_sessions = int(player.get('recentSessionCount', 0) or 0)
+    logger.info(f"Player {player['name']} has recent data: {has_recent_data}")
+
+    def _analytics_safe():
+        try:
+            return data_service.get_analytics_overview(request.playerId)
+        except Exception:
+            return None
+
+    if not has_recent_data or recent_sessions == 0:
+        risk_level = 'low'
+        probability = 0.0
+        risk_factors = [f"No training data in the last 45 days ({recent_sessions} sessions)"]
+        ml_recommendations = [
+            "Player has no recent training sessions",
+            "Risk cannot be accurately assessed without recent data",
+            "Consider starting with low intensity training to gather baseline data",
+        ]
+    else:
+        features = player.get('metrics', {})
+        if not isinstance(features, dict) or len(features) == 0:
+            risk_level = 'low'
+            probability = 0.0
+            risk_factors = ["Insufficient metrics data for risk prediction"]
+            ml_recommendations = [
+                "Player metrics are not available",
+                "Upload training data to enable risk analysis",
+            ]
+        else:
+            try:
+                risk_level, probability, risk_factors, ml_recommendations = await asyncio.to_thread(
+                    ml_service.predict_risk, features
+                )
+            except Exception as e:
+                risk_level = 'low'
+                probability = 0.0
+                risk_factors = [f"Risk prediction unavailable: {str(e)}"]
+                ml_recommendations = [
+                    "Unable to calculate risk with current data",
+                    "Ensure training models are properly trained",
+                    "Check that sufficient player data is available",
+                ]
+
+    if used_team_stub:
+        risk_level = 'low'
+        probability = 0.0
+        risk_factors = [
+            "No team aggregate could be built: no CSV loaded, empty roster, or no athlete has GPS sessions in the last 45 days.",
+        ]
+        ml_recommendations = [
+            "Upload or refresh the team Catapult CSV from Dashboard and confirm session dates fall inside the analysis window.",
+            "Once at least one player has recent sessions, Team Average will summarize squad load, speed, and sprint exposure.",
+            "If some individuals already have data, analyze them by name until the full squad is current.",
+        ]
+
+    analytics_overview = None
+    should_load_analytics = (
+        openrouter_service.is_configured()
+        and getattr(openrouter_service, "include_analytics", True)
+        and has_recent_data
+        and recent_sessions > 0
+    )
+    if should_load_analytics:
+        analytics_overview = await asyncio.to_thread(_analytics_safe)
+
+    logger.info(f"Risk level determined: {risk_level}")
+
+    allow_ollama_fallback = os.environ.get("ALLOW_OLLAMA_FALLBACK", "0") == "1"
+    total_llm_timeout_s = float(os.environ.get("AI_RECOMMENDATIONS_TIMEOUT_S", "55"))
+
+    async def _openrouter_call():
+        return await asyncio.to_thread(
+            openrouter_service.get_player_recommendations,
+            player['name'],
+            player,
+            risk_level,
+            risk_factors,
+            analytics_overview,
+        )
+
+    try:
+        result = await asyncio.wait_for(_openrouter_call(), timeout=total_llm_timeout_s)
+    except asyncio.TimeoutError:
+        logger.warning(
+            "OpenRouter timed out after %.1fs for playerId=%s (falling back to standard report)",
+            total_llm_timeout_s,
+            request.playerId,
+        )
+        result = {
+            "success": False,
+            "error": f"AI generation timed out after {int(total_llm_timeout_s)}s",
+            "recommendations": "",
+            "source": "openrouter-timeout",
+        }
+    except Exception as exc:
+        logger.warning(
+            "OpenRouter call crashed for playerId=%s (falling back): %s",
+            request.playerId,
+            exc,
+        )
+        result = {
+            "success": False,
+            "error": f"AI generation failed: {str(exc)[:200]}",
+            "recommendations": "",
+            "source": "openrouter-error",
+        }
+
+    if not result.get('success') and allow_ollama_fallback:
+        fallback_result = await asyncio.to_thread(
+            ollama_service.get_player_recommendations,
+            player['name'],
+            player,
+            risk_level,
+            risk_factors,
+        )
+        if fallback_result.get('success') and result.get('error'):
+            fallback_result['error'] = f"OpenRouter failed: {result.get('error')}"
+        result = fallback_result
+
+    logger.info(f"AI recommendations result - success: {result.get('success')}, source: {result.get('source')}")
+
+    ai_recommendations = result.get('recommendations', '')
+    ai_success = bool(result.get('success', False))
+    ai_source = result.get('source', 'fallback')
+    if not ai_recommendations:
+        ai_recommendations = _build_standard_recommendation_report(
+            player['name'],
+            risk_level,
+            risk_factors,
+            ml_recommendations,
+            player_id=request.playerId,
+        )
+        if ai_source == 'fallback':
+            ai_source = 'rule-based-fallback'
+
+    response_data = {
+        'coachBundleVersion': 1,
+        'playerId': request.playerId,
+        'playerName': player['name'],
+        'riskLevel': risk_level,
+        'probability': probability,
+        'factors': risk_factors,
+        'recommendations': ml_recommendations,
+        'hasRecentData': has_recent_data,
+        'recentSessionCount': player.get('recentSessionCount', 0),
+        'aiRecommendations': ai_recommendations,
+        'aiSource': ai_source,
+        'aiSuccess': ai_success,
+        'aiError': result.get('error')
+    }
+
+    if response_data.get("aiSuccess") and response_data.get("aiRecommendations"):
+        try:
+            cache_fp.write_text(json.dumps(response_data, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
+
+    return response_data
+    # --- END: original body ---
+
+
+async def _run_ai_job(job_id: str, player_id: str) -> None:
+    await _cleanup_ai_jobs()
+    async with _AI_JOBS_LOCK:
+        job = _AI_JOBS.get(job_id)
+        if not job:
+            return
+        job["status"] = "running"
+        job["startedAt"] = time.time()
+    try:
+        result = await _compute_coach_bundle(player_id)
+        async with _AI_JOBS_LOCK:
+            job = _AI_JOBS.get(job_id)
+            if job:
+                job["status"] = "done"
+                job["result"] = result
+                job["finishedAt"] = time.time()
+    except Exception as exc:
+        async with _AI_JOBS_LOCK:
+            job = _AI_JOBS.get(job_id)
+            if job:
+                job["status"] = "error"
+                job["error"] = str(exc)[:280]
+                job["finishedAt"] = time.time()
+
+
+@router.post("/ai-recommendations-jobs", response_model=ApiResponse)
+async def start_ai_recommendations_job(request: PredictRiskRequest):
+    """Start coach report generation asynchronously. Returns jobId immediately."""
+    job_id = uuid.uuid4().hex
+    now = time.time()
+    async with _AI_JOBS_LOCK:
+        _AI_JOBS[job_id] = {
+            "jobId": job_id,
+            "playerId": request.playerId,
+            "status": "queued",
+            "createdAt": now,
+        }
+    asyncio.create_task(_run_ai_job(job_id, request.playerId))
+    return ApiResponse(success=True, data={"jobId": job_id, "status": "queued", "pollMinSeconds": _AI_JOB_POLL_MIN_S})
+
+
+@router.get("/ai-recommendations-jobs/{job_id}", response_model=ApiResponse)
+async def get_ai_recommendations_job(job_id: str):
+    """Poll a coach report job."""
+    await _cleanup_ai_jobs()
+    async with _AI_JOBS_LOCK:
+        job = _AI_JOBS.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found or expired")
+        # Return minimal metadata until done.
+        out = {k: job.get(k) for k in ("jobId", "playerId", "status", "createdAt", "startedAt", "finishedAt", "error")}
+        if job.get("status") == "done":
+            out["result"] = job.get("result")
+        return ApiResponse(success=True, data=out)
 
 
 def _build_ai_cache_key(player_id: str, player: dict) -> str:

@@ -71,21 +71,38 @@ export default function Analysis() {
     enabled: !!dataStatus?.loaded && !!selectedPlayer,
   });
 
-  // One backend round-trip: ML risk + OpenRouter coach text (no duplicate predict_risk / no double timeout)
+  // Coach report runs async (job + polling) so Render won't 502 on long requests.
   const analyzeMutation = useMutation({
     mutationFn: async (playerId: string) => {
-      const d = await analysisApi.getAIRecommendations(playerId);
-      const risk: RiskPrediction = {
-        playerId: d.playerId,
-        playerName: d.playerName,
-        riskLevel: d.riskLevel,
-        probability: typeof d.probability === 'number' ? d.probability : 0,
-        factors: Array.isArray(d.factors) ? d.factors : [],
-        recommendations: Array.isArray(d.recommendations) ? d.recommendations : [],
-        hasRecentData: d.hasRecentData,
-        recentSessionCount: d.recentSessionCount,
-      };
-      return { risk, ai: d };
+      const started = await analysisApi.startAIRecommendationsJob(playerId);
+      const pollMinMs = Math.max(800, Math.round((started.pollMinSeconds ?? 1.5) * 1000));
+      const deadlineMs = Date.now() + 300_000; // 5 minutes max wait in UI
+      let lastStatus: string | null = null;
+
+      while (Date.now() < deadlineMs) {
+        const polled = await analysisApi.getAIRecommendationsJob(started.jobId);
+        if (polled.status !== lastStatus) lastStatus = polled.status;
+        if (polled.status === 'done' && polled.result) {
+          const d = polled.result;
+          const risk: RiskPrediction = {
+            playerId: d.playerId,
+            playerName: d.playerName,
+            riskLevel: d.riskLevel,
+            probability: typeof d.probability === 'number' ? d.probability : 0,
+            factors: Array.isArray(d.factors) ? d.factors : [],
+            recommendations: Array.isArray(d.recommendations) ? d.recommendations : [],
+            hasRecentData: d.hasRecentData,
+            recentSessionCount: d.recentSessionCount,
+          };
+          return { risk, ai: d };
+        }
+        if (polled.status === 'error') {
+          throw new Error(polled.error || 'Coach report failed');
+        }
+        await new Promise((r) => window.setTimeout(r, pollMinMs));
+      }
+
+      throw new Error('Coach report timed out in the UI (try again).');
     },
     onMutate: () => {
       setPrediction(null);

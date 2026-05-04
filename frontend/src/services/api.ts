@@ -37,6 +37,18 @@ export type AIRecommendationBundle = {
   recentSessionCount?: number;
 };
 
+export type AIRecommendationJobStart = { jobId: string; status: 'queued'; pollMinSeconds?: number };
+export type AIRecommendationJobPoll = {
+  jobId: string;
+  playerId: string;
+  status: 'queued' | 'running' | 'done' | 'error';
+  createdAt?: number;
+  startedAt?: number;
+  finishedAt?: number;
+  error?: string;
+  result?: AIRecommendationBundle;
+};
+
 export type OpenRouterStatus = {
   status: 'ready' | 'not_configured' | 'error' | string;
   message?: string;
@@ -294,6 +306,23 @@ export const analysisApi = {
       '/analysis/ai-recommendations',
       { playerId },
       { timeout: 300000 }
+    );
+    return data.data!;
+  },
+
+  startAIRecommendationsJob: async (playerId: string): Promise<AIRecommendationJobStart> => {
+    const { data } = await api.post<ApiResponse<AIRecommendationJobStart>>(
+      '/analysis/ai-recommendations-jobs',
+      { playerId },
+      { timeout: 45000 },
+    );
+    return data.data!;
+  },
+
+  getAIRecommendationsJob: async (jobId: string): Promise<AIRecommendationJobPoll> => {
+    const { data } = await api.get<ApiResponse<AIRecommendationJobPoll>>(
+      `/analysis/ai-recommendations-jobs/${encodeURIComponent(jobId)}`,
+      { timeout: 45000 },
     );
     return data.data!;
   },
